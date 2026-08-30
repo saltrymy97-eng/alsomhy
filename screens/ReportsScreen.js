@@ -98,17 +98,18 @@ export default function ReportsScreen() {
 
   // 1. تصدير البيانات إلى ملف Excel (.xlsx) عبر المتصفح
   const handleExportToExcel = () => {
-    if (!reportDetails || reportDetails.length === 0) {
+    // التحقق الآمن من المصفوفة
+    if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
       Alert.alert('تنبيه', 'لا توجد بيانات مالية كافية لتصديرها.');
       return;
     }
 
     try {
       const worksheetData = reportDetails.map(item => ({
-        'نوع البند': item.البند,
-        'المبلغ (ر.ي)': item.المبلغ,
-        'البيان والتفاصيل': item.البيان,
-        'تاريخ الحركة': item.التاريخ,
+        'نوع البند': item?.البند || 'غير محدد',
+        'المبلغ (ر.ي)': Number(item?.المبلغ) || 0,
+        'البيان والتفاصيل': item?.البيان || '---',
+        'تاريخ الحركة': item?.التاريخ ? new Date(item.التاريخ).toLocaleString('ar-YE') : 'غير محدد',
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(worksheetData);
@@ -124,12 +125,38 @@ export default function ReportsScreen() {
 
   // 2. تصدير البيانات إلى صفحة HTML وعرضها للطباعة
   const handleExportToHTML = () => {
-    if (!reportDetails || reportDetails.length === 0) {
+    // التحقق الآمن من أن البيانات مصفوفة فعلية وليست فارغة
+    if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
       Alert.alert('تنبيه', 'لا توجد بيانات كافية لإنشاء التقرير.');
       return;
     }
 
     try {
+      // تأمين القيم المالية لتفادي أخطاء NaN أو undefined
+      const safeTotalSales = Number(financialData?.totalSales) || 0;
+      const safeTotalExpensesAndPurchases = (Number(financialData?.totalPurchases) || 0) + (Number(financialData?.totalExpenses) || 0);
+      const safeNetIncome = Number(financialData?.netIncome) || 0;
+
+      // بناء صفوف الجدول بشكل منفصل وآمن لتجنب خطأ الانهيار t.join
+      const tableRows = reportDetails.map((item) => {
+        const type = item?.البند || 'غير محدد';
+        const amount = Number(item?.المبلغ) || 0;
+        const desc = item?.البيان || '---';
+        const date = item?.التاريخ ? new Date(item.التاريخ).toLocaleString('ar-YE') : 'غير محدد';
+        
+        const amountColor = type === 'مبيعات' ? '#10B981' : '#EF4444';
+
+        return `
+          <tr>
+            <td><b>${type}</b></td>
+            <td style="font-weight: bold; color: ${amountColor};">${amount.toLocaleString()}</td>
+            <td>${desc}</td>
+            <td>${date}</td>
+          </tr>
+        `;
+      }).join(''); // الدمج يتم هنا بأمان
+
+      // دمج الصفوف داخل قالب الـ HTML
       const htmlContent = `
         <!DOCTYPE html>
         <html dir="rtl" lang="ar">
@@ -163,15 +190,15 @@ export default function ReportsScreen() {
             <div class="summary-box">
               <div class="summary-item">
                 <h3>إجمالي المبيعات</h3>
-                <p style="color: #10B981;">${financialData.totalSales.toLocaleString()} ر.ي</p>
+                <p style="color: #10B981;">${safeTotalSales.toLocaleString()} ر.ي</p>
               </div>
               <div class="summary-item">
                 <h3>إجمالي المصروفات</h3>
-                <p style="color: #EF4444;">${(financialData.totalPurchases + financialData.totalExpenses).toLocaleString()} ر.ي</p>
+                <p style="color: #EF4444;">${safeTotalExpensesAndPurchases.toLocaleString()} ر.ي</p>
               </div>
               <div class="summary-item">
                 <h3>صافي الدخل العام</h3>
-                <p style="color: #2563EB;">${financialData.netIncome.toLocaleString()} ر.ي</p>
+                <p style="color: #2563EB;">${safeNetIncome.toLocaleString()} ر.ي</p>
               </div>
             </div>
 
@@ -185,14 +212,7 @@ export default function ReportsScreen() {
                 </tr>
               </thead>
               <tbody>
-                ${reportDetails.map(item => `
-                  <tr>
-                    <td><b>${item.البند}</b></td>
-                    <td style="font-weight: bold; color: ${item.البند === 'مبيعات' ? '#10B981' : '#EF4444'};">${item.المبلغ.toLocaleString()}</td>
-                    <td>${item.البيان}</td>
-                    <td>${new Date(item.التاريخ).toLocaleString('ar-YE')}</td>
-                  </tr>
-                `).join('')}
+                ${tableRows}
               </tbody>
             </table>
 
@@ -229,6 +249,11 @@ export default function ReportsScreen() {
     );
   }
 
+  // استخدام خصائص آمنة (Optional Chaining) لضمان عدم حدوث Crash أثناء التصيير
+  const safeRenderTotalSales = Number(financialData?.totalSales) || 0;
+  const safeRenderTotalExpenses = (Number(financialData?.totalPurchases) || 0) + (Number(financialData?.totalExpenses) || 0);
+  const safeRenderNetIncome = Number(financialData?.netIncome) || 0;
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
@@ -247,7 +272,7 @@ export default function ReportsScreen() {
               <MaterialCommunityIcons name="trending-up" size={24} color="#10B981" />
               <Text style={styles.cardTitle}>إجمالي المبيعات</Text>
               <Text style={[styles.cardValue, { color: '#10B981' }]}>
-                {financialData.totalSales.toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
+                {safeRenderTotalSales.toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
               </Text>
             </View>
 
@@ -255,7 +280,7 @@ export default function ReportsScreen() {
               <MaterialCommunityIcons name="trending-down" size={24} color="#EF4444" />
               <Text style={styles.cardTitle}>المشتريات والمصروفات</Text>
               <Text style={[styles.cardValue, { color: '#EF4444' }]}>
-                {(financialData.totalPurchases + financialData.totalExpenses).toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
+                {safeRenderTotalExpenses.toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
               </Text>
             </View>
           </View>
@@ -268,8 +293,8 @@ export default function ReportsScreen() {
               </View>
               <MaterialCommunityIcons name="wallet-bifold" size={32} color="#2563EB" />
             </View>
-            <Text style={[styles.netIncomeValue, { color: financialData.netIncome >= 0 ? '#10B981' : '#EF4444' }]}>
-              {financialData.netIncome.toLocaleString()} <Text style={styles.currencyLarge}>ريال يمني</Text>
+            <Text style={[styles.netIncomeValue, { color: safeRenderNetIncome >= 0 ? '#10B981' : '#EF4444' }]}>
+              {safeRenderNetIncome.toLocaleString()} <Text style={styles.currencyLarge}>ريال يمني</Text>
             </Text>
           </View>
         </View>
@@ -299,30 +324,38 @@ export default function ReportsScreen() {
 
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>آخر العمليات المدرجة في التقرير</Text>
-          {reportDetails.length === 0 ? (
+          {(!Array.isArray(reportDetails) || reportDetails.length === 0) ? (
             <View style={styles.emptyContainer}>
               <MaterialCommunityIcons name="clipboard-text-off-outline" size={42} color="#CBD5E1" />
               <Text style={styles.emptyText}>لا توجد حركات مسجلة حالياً لعرضها</Text>
             </View>
           ) : (
-            reportDetails.slice(0, 5).map((item, index) => (
-              <View key={index} style={styles.historyRow}>
-                <View style={styles.historyRowRight}>
-                  <MaterialCommunityIcons 
-                    name={item.البند === 'مبيعات' ? 'arrow-down-left' : 'arrow-up-right'} 
-                    size={20} 
-                    color={item.البند === 'مبيعات' ? '#10B981' : '#EF4444'} 
-                  />
-                  <View>
-                    <Text style={styles.historyItemTitle}>{item.البند}: {item.البيان}</Text>
-                    <Text style={styles.historyItemDate}>{new Date(item.التاريخ).toLocaleDateString('ar-YE')}</Text>
+            reportDetails.slice(0, 5).map((item, index) => {
+              const type = item?.البند || 'غير محدد';
+              const isSale = type === 'مبيعات';
+              const amount = Number(item?.المبلغ) || 0;
+              const date = item?.التاريخ ? new Date(item.التاريخ).toLocaleDateString('ar-YE') : '---';
+              const desc = item?.البيان || '---';
+
+              return (
+                <View key={index} style={styles.historyRow}>
+                  <View style={styles.historyRowRight}>
+                    <MaterialCommunityIcons 
+                      name={isSale ? 'arrow-down-left' : 'arrow-up-right'} 
+                      size={20} 
+                      color={isSale ? '#10B981' : '#EF4444'} 
+                    />
+                    <View>
+                      <Text style={styles.historyItemTitle}>{type}: {desc}</Text>
+                      <Text style={styles.historyItemDate}>{date}</Text>
+                    </View>
                   </View>
+                  <Text style={[styles.historyItemAmount, { color: isSale ? '#10B981' : '#EF4444' }]}>
+                    {amount.toLocaleString()} ر.ي
+                  </Text>
                 </View>
-                <Text style={[styles.historyItemAmount, { color: item.البند === 'مبيعات' ? '#10B981' : '#EF4444' }]}>
-                  {item.المبلغ.toLocaleString()} ر.ي
-                </Text>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
 
