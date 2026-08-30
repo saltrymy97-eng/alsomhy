@@ -1,0 +1,25 @@
+{
+  "name": "alsomhy-accounting",
+  "version": "1.0.0",
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^14.0.0",
+    "expo": "~51.0.0",
+    "expo-file-system": "~17.0.0",
+    "expo-sharing": "~12.8.0",
+    "expo-sqlite": "~15.0.0",
+    "react": "18.2.0",
+    "react-native": "0.74.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0"
+  },
+  "private": true
+}
