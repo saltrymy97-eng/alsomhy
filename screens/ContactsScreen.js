@@ -10,6 +10,9 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
+import * as SQLite from 'expo-sqlite';
+
+const db = SQLite.openDatabaseSync('accounting.db');
 
 export default function ContactsScreen() {
   const [activeTab, setActiveTab] = useState('customer'); // 'customer' للعملاء أو 'supplier' للموردين
@@ -19,17 +22,36 @@ export default function ContactsScreen() {
   const [contactsList, setContactsList] = useState([]);
 
   useEffect(() => {
-    fetchContacts();
+    initTableAndFetch();
   }, [activeTab]);
 
+  const initTableAndFetch = () => {
+    try {
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS contacts_ledger (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          amount REAL NOT NULL,
+          date TEXT NOT NULL,
+          type TEXT NOT NULL
+        );
+      `);
+      fetchContacts();
+    } catch (error) {
+      console.error('خطأ في تهيئة جدول الديون والمستحقات:', error);
+    }
+  };
+
   const fetchContacts = () => {
-    // محاكاة مؤقتة لجلب البيانات حسب النوع (عميل أو مورد) من SQLite
-    const sampleData = activeTab === 'customer' ? [
-      { id: '1', name: 'محمد صالح (دين عُملة)', amount: 15000, date: '2026-09-05', type: 'customer' },
-    ] : [
-      { id: '2', name: 'شركة الأغذية الكبرى (مستحق)', amount: 85000, date: '2026-09-02', type: 'supplier' },
-    ];
-    setContactsList(sampleData);
+    try {
+      const results = db.getAllSync(
+        'SELECT * FROM contacts_ledger WHERE type = ? ORDER BY id DESC;',
+        [activeTab]
+      );
+      setContactsList(results);
+    } catch (error) {
+      console.error('خطأ في جلب السجلات:', error);
+    }
   };
 
   const handleSaveContact = () => {
@@ -38,20 +60,21 @@ export default function ContactsScreen() {
       return;
     }
 
-    const newContact = {
-      id: Math.random().toString(),
-      name: name,
-      amount: parseFloat(amountDue),
-      date: dueDate,
-      type: activeTab,
-    };
+    try {
+      const numAmount = parseFloat(amountDue);
+      db.runSync(
+        'INSERT INTO contacts_ledger (name, amount, date, type) VALUES (?, ?, ?, ?);',
+        [name, numAmount, dueDate, activeTab]
+      );
 
-    // سيتم حفظه في جدول contacts_ledger عبر SQLite لاحقاً
-    setContactsList([newContact, ...contactsList]);
-
-    setName('');
-    setAmountDue('');
-    setDueDate('');
+      setName('');
+      setAmountDue('');
+      setDueDate('');
+      fetchContacts();
+    } catch (error) {
+      console.error('خطأ في حفظ السجل:', error);
+      Alert.alert('خطأ', 'فشل حفظ السجل في قاعدة البيانات.');
+    }
   };
 
   const renderContactItem = ({ item }) => (
