@@ -10,31 +10,46 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
+import * as SQLite from 'expo-sqlite';
 
-// استيراد قاعدة البيانات (سيتم تفعيلها عند تشغيل التطبيق)
-// import db from '../db';
+const db = SQLite.openDatabaseSync('accounting.db');
 
 export default function DailyLogScreen() {
   const [purchaseAmount, setPurchaseAmount] = useState('');
   const [saleAmount, setSaleAmount] = useState('');
   const [todayLogs, setTodayLogs] = useState([]);
 
-  // جلب حركات اليوم عند فتح الشاشة (محاكاة لقاعدة البيانات)
   useEffect(() => {
-    fetchTodayLogs();
+    initTableAndFetch();
   }, []);
 
+  const initTableAndFetch = () => {
+    try {
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS daily_transactions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT DEFAULT (date('now')),
+          time TEXT,
+          total_purchases REAL,
+          total_sales REAL,
+          net_profit REAL
+        );
+      `);
+      fetchTodayLogs();
+    } catch (error) {
+      console.error('خطأ في تهيئة جدول الحركات اليومية:', error);
+    }
+  };
+
   const fetchTodayLogs = () => {
-    // سيتم استبدال هذا الكود باستعلام SQLite لجلب بيانات اليوم فقط
-    /*
-    db.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM daily_transactions WHERE date = date("now")',
-        [],
-        (_, { rows }) => setTodayLogs(rows._array)
+    try {
+      const results = db.getAllSync(
+        `SELECT * FROM daily_transactions WHERE date = date('now') ORDER BY id DESC;`
       );
-    });
-    */
+      setTodayLogs(results);
+    } catch (error) {
+      console.error('خطأ في جلب حركات اليوم:', error);
+    }
   };
 
   const handleSaveTransaction = () => {
@@ -45,40 +60,25 @@ export default function DailyLogScreen() {
 
     const pAmount = parseFloat(purchaseAmount) || 0;
     const sAmount = parseFloat(saleAmount) || 0;
-    const netProfit = sAmount - pAmount; // صافي العملية
+    const netProfit = sAmount - pAmount; 
+    const currentTime = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
 
-    // سيتم استبدال هذا الكود بعملية الإدخال الفعلية في SQLite
-    /*
-    db.transaction(tx => {
-      tx.executeSql(
-        'INSERT INTO daily_transactions (date, total_purchases, total_sales, net_profit) VALUES (date("now"), ?, ?, ?)',
-        [pAmount, sAmount, netProfit],
-        (_, result) => {
-          Alert.alert('نجاح', 'تم تسجيل العملية بنجاح');
-          setPurchaseAmount('');
-          setSaleAmount('');
-          fetchTodayLogs(); // تحديث القائمة
-        },
-        (_, error) => console.log(error)
+    try {
+      db.runSync(
+        'INSERT INTO daily_transactions (date, time, total_purchases, total_sales, net_profit) VALUES (date("now"), ?, ?, ?, ?);',
+        [currentTime, pAmount, sAmount, netProfit]
       );
-    });
-    */
 
-    // محاكاة مؤقتة للإضافة في الواجهة
-    const newLog = {
-      id: Math.random().toString(),
-      total_purchases: pAmount,
-      total_sales: sAmount,
-      net_profit: netProfit,
-      time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
-    };
-    
-    setTodayLogs([newLog, ...todayLogs]);
-    setPurchaseAmount('');
-    setSaleAmount('');
+      setPurchaseAmount('');
+      setSaleAmount('');
+      fetchTodayLogs();
+      Alert.alert('نجاح', 'تم تسجيل العملية بنجاح');
+    } catch (error) {
+      console.error('خطأ في حفظ العملية:', error);
+      Alert.alert('خطأ', 'فشل حفظ الحركة في قاعدة البيانات.');
+    }
   };
 
-  // تصميم بطاقة السجل الواحد في القائمة
   const renderLogItem = ({ item }) => (
     <View style={styles.logCard}>
       <View style={styles.logRow}>
@@ -145,7 +145,6 @@ export default function DailyLogScreen() {
   );
 }
 
-// --- التنسيقات (الفاخرة والبيضاء) ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -196,7 +195,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   saveButton: {
-    backgroundColor: '#3B82F6', // أزرق فاخر
+    backgroundColor: '#3B82F6',
     borderRadius: 12,
     padding: 15,
     alignItems: 'center',
