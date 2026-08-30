@@ -6,41 +6,98 @@ import {
   SafeAreaView, 
   ScrollView, 
   TouchableOpacity, 
-  StatusBar, 
-  Platform 
+  StatusBar 
 } from 'react-native';
+import * as SQLite from 'expo-sqlite';
 
-// سيتم تفعيل هذا الاستيراد لاحقاً لربط الواجهة بقاعدة البيانات
-// import { initDB } from './db';
+// الاستيراد الفعلي للشاشات المطلوبة من مجلد screens
+import DailyLogScreen from './screens/DailyLogScreen';
+import InventoryScreen from './screens/InventoryScreen';
+import TreasuryScreen from './screens/TreasuryScreen';
+import ContactsScreen from './screens/ContactsScreen';
+import ReportsScreen from './screens/ReportsScreen';
+
+// فتح أو إنشاء قاعدة البيانات المركزية
+const db = SQLite.openDatabaseSync('accounting.db');
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('dashboard');
-  
-  // إحصائيات وهمية للتجربة (سيتم جلبها لاحقاً من SQLite)
-  const stats = {
-    dailyNet: 15000,
-    cashBalance: 45000,
-    bankBalance: 120000,
+  const [stats, setStats] = useState({
+    dailyNet: 0,
+    cashBalance: 0,
+    bankBalance: 0,
+  });
+
+  useEffect(() => {
+    initDatabase();
+    fetchDashboardStats();
+  }, [currentScreen]);
+
+  // تهيئة جداول النظام الأساسية للتأكد من جاهزية التطبيق
+  const initDatabase = () => {
+    try {
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS treasury_balances (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cash_balance REAL DEFAULT 0,
+          bank_balance REAL DEFAULT 0
+        );
+      `);
+      
+      const res = db.getAllSync('SELECT * FROM treasury_balances;');
+      if (res.length === 0) {
+        db.runSync('INSERT INTO treasury_balances (cash_balance, bank_balance) VALUES (0, 0);');
+      }
+    } catch (error) {
+      console.error('خطأ في تهيئة قاعدة البيانات الرئيسية:', error);
+    }
   };
 
-  // عند تشغيل التطبيق لأول مرة، نقوم بتهيئة قاعدة البيانات
-  useEffect(() => {
-    // initDB().then(() => console.log('DB Ready'));
-  }, []);
+  // جلب الأرصدة لعرضها في لوحة التحكم
+  const fetchDashboardStats = () => {
+    try {
+      const res = db.getAllSync('SELECT * FROM treasury_balances LIMIT 1;');
+      if (res.length > 0) {
+        setStats({
+          dailyNet: 15000, // يمكن ربطها بقائمة الدخل لاحقاً
+          cashBalance: res[0].cash_balance || 0,
+          bankBalance: res[0].bank_balance || 0,
+        });
+      }
+    } catch (error) {
+      console.error('خطأ في جلب بيانات اللوحة:', error);
+    }
+  };
 
-  // --- مكونات الواجهة الفاخرة ---
+  // تبديل الشاشات برمجياً بناءً على اختيار المستخدم
+  const renderCurrentScreen = () => {
+    switch (currentScreen) {
+      case 'daily':
+        return <DailyLogScreen />;
+      case 'inventory':
+        return <InventoryScreen />;
+      case 'treasury':
+        return <TreasuryScreen />;
+      case 'contacts':
+        return <ContactsScreen />;
+      case 'reports':
+        return <ReportsScreen />;
+      default:
+        return renderDashboard();
+    }
+  };
 
-  // 1. بطاقة الإحصائيات العلوية
+  // بطاقة إحصائية علوية
   const StatCard = ({ title, amount, color }) => (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{title}</Text>
       <Text style={[styles.cardAmount, { color: color }]}>
-        {amount.toLocaleString()} <Text style={styles.currency}>ريال</Text>
+        {amount.toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
       </Text>
     </View>
   );
 
-  // 2. بطاقة التنبيهات
+  // بطاقة التنبيهات الذكية
   const AlertCard = ({ type, message, date }) => {
     const isDanger = type === 'danger';
     return (
@@ -54,9 +111,9 @@ export default function App() {
     );
   };
 
-  // 3. زر التنقل الرئيسي
+  // زر التنقل في الشبكة الرئيسية
   const MenuButton = ({ title, icon, action }) => (
-    <TouchableOpacity style={styles.menuButton} onPress={() => setCurrentScreen(action)}>
+    <TouchableOpacity style={styles.menuButton} onPress={() => setCurrentScreen(action)} activeOpacity={0.8}>
       <View style={styles.menuIconPlaceholder}>
         <Text style={styles.menuIconText}>{icon}</Text>
       </View>
@@ -64,7 +121,7 @@ export default function App() {
     </TouchableOpacity>
   );
 
-  // --- الشاشة الرئيسية (لوحة التحكم) ---
+  // واجهة لوحة التحكم الرئيسية (Dashboard)
   const renderDashboard = () => (
     <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
       {/* ملخص الأموال */}
@@ -82,13 +139,12 @@ export default function App() {
       {/* مركز التنبيهات الذكي */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>التنبيهات العاجلة</Text>
-        <AlertCard type="danger" message="استحقاق دين: محمد صالح" date="اليوم" />
-        <AlertCard type="warning" message="انتهاء صلاحية: زبادي ممتاز" date="بعد 3 أيام" />
-        <AlertCard type="warning" message="نقص كمية: دقيق أبيض" date="الكمية: 2" />
+        <AlertCard type="danger" message="استحقاق ديون عملاء مستحقة اليوم" date="اليوم" />
+        <AlertCard type="warning" message="مراجعة أرصدة الخزينة والمخزون" date="دوري" />
       </View>
 
-      {/* أزرار العمليات */}
-      <View style={styles.section}>
+      {/* أزرار العمليات والوصول السريع */}
+      <View style={[styles.section, { marginBottom: 30 }]}>
         <Text style={styles.sectionTitle}>العمليات السريعة</Text>
         <View style={styles.menuGrid}>
           <MenuButton title="حركة اليوم" icon="🛒" action="daily" />
@@ -107,10 +163,12 @@ export default function App() {
       
       {/* الشريط العلوي الفاخر */}
       <View style={styles.header}>
-        {currentScreen !== 'dashboard' && (
+        {currentScreen !== 'dashboard' ? (
           <TouchableOpacity onPress={() => setCurrentScreen('dashboard')} style={styles.backButton}>
-            <Text style={styles.backButtonText}>{"< عودة"}</Text>
+            <Text style={styles.backButtonText}>{"< عودة للرئيسية"}</Text>
           </TouchableOpacity>
+        ) : (
+          <View style={{ width: 40 }} />
         )}
         <Text style={styles.headerTitle}>نظام الإدارة الشامل</Text>
         <View style={styles.dateBadge}>
@@ -118,25 +176,20 @@ export default function App() {
         </View>
       </View>
 
-      {/* عرض الشاشات برمجياً */}
-      {currentScreen === 'dashboard' ? renderDashboard() : (
-        <View style={styles.placeholderScreen}>
-          <Text style={styles.placeholderText}>شاشة {currentScreen} قيد التطوير...</Text>
-        </View>
-      )}
+      {/* عرض الشاشة النشطة */}
+      {renderCurrentScreen()}
 
     </SafeAreaView>
   );
 }
 
-// --- التنسيقات (White & Luxurious Theme) ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC', // لون رمادي فاتح جداً يبرز البطاقات البيضاء
+    backgroundColor: '#F8FAFC',
   },
   header: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
@@ -146,74 +199,77 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F1F5F9',
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 19,
+    fontWeight: '800',
     color: '#0F172A',
+    textAlign: 'center',
   },
   dateBadge: {
     backgroundColor: '#EEF2FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 20,
   },
   dateText: {
     color: '#4F46E5',
     fontWeight: '600',
-    fontSize: 12,
+    fontSize: 11,
   },
   backButton: {
-    marginRight: 10,
+    paddingVertical: 4,
   },
   backButtonText: {
     color: '#3B82F6',
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 14,
   },
   scrollArea: {
     flex: 1,
     paddingHorizontal: 20,
   },
   section: {
-    marginTop: 25,
+    marginTop: 22,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#334155',
-    marginBottom: 15,
-    textAlign: 'right', // متوافق مع اللغة العربية
+    marginBottom: 12,
+    textAlign: 'right',
   },
   statsRow: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
-    marginBottom: 15,
+    marginBottom: 12,
+    gap: 10,
   },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     flex: 1,
-    marginHorizontal: 5,
-    // ظل فاخر
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
     shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cardTitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748B',
-    marginBottom: 8,
+    marginBottom: 6,
     textAlign: 'right',
+    fontWeight: '600',
   },
   cardAmount: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '800',
     textAlign: 'right',
   },
   currency: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'normal',
     color: '#94A3B8',
   },
@@ -222,36 +278,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 15,
-    marginBottom: 10,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    borderRightWidth: 4,
     shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    borderRightWidth: 4,
+    shadowOpacity: 0.03,
+    shadowRadius: 5,
+    elevation: 1,
   },
   alertDanger: { borderRightColor: '#EF4444' },
   alertWarning: { borderRightColor: '#F59E0B' },
   alertTextContainer: {
     flex: 1,
     alignItems: 'flex-end',
-    marginRight: 15,
+    marginRight: 12,
   },
   alertMessage: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#1E293B',
+    textAlign: 'right',
   },
   alertDate: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#64748B',
-    marginTop: 4,
+    marginTop: 2,
   },
   alertIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   bgRed: { backgroundColor: '#EF4444' },
   bgOrange: { backgroundColor: '#F59E0B' },
@@ -259,45 +318,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+    gap: 12,
   },
   menuButton: {
     backgroundColor: '#FFFFFF',
-    width: '31%', // يتيح 3 أزرار في الصف
+    width: '30%',
     aspectRatio: 1,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
     shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
     elevation: 2,
   },
   menuIconPlaceholder: {
-    width: 45,
-    height: 45,
+    width: 42,
+    height: 42,
     backgroundColor: '#F8FAFC',
-    borderRadius: 22.5,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   menuIconText: {
     fontSize: 20,
   },
   menuButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#334155',
   },
-  placeholderScreen: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  placeholderText: {
-    fontSize: 18,
-    color: '#94A3B8',
-  }
 });
