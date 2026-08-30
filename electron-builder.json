@@ -1,0 +1,14 @@
+{
+  "appId": "com.alsomhy.accounting",
+  "productName": "GroceryAccounting",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "main.js"
+  ],
+  "win": {
+    "target": "portable"
+  }
+}
