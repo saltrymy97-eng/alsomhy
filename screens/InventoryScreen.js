@@ -10,6 +10,9 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
+import * as SQLite from 'expo-sqlite';
+
+const db = SQLite.openDatabaseSync('accounting.db');
 
 export default function InventoryScreen() {
   const [productName, setProductName] = useState('');
@@ -19,16 +22,35 @@ export default function InventoryScreen() {
   const [inventoryList, setInventoryList] = useState([]);
 
   useEffect(() => {
-    fetchInventory();
+    initTableAndFetch();
   }, []);
 
+  const initTableAndFetch = () => {
+    try {
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS inventory (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          qty REAL NOT NULL,
+          expiry TEXT NOT NULL,
+          minAlert REAL NOT NULL
+        );
+      `);
+      fetchInventory();
+    } catch (error) {
+      console.error('خطأ في تهيئة جدول المخزون:', error);
+    }
+  };
+
   const fetchInventory = () => {
-    // محاكاة مؤقتة لجلب البيانات من SQLite
-    const sampleData = [
-      { id: '1', name: 'زبادي ممتاز', qty: 50, expiry: '2026-09-10', minAlert: 10 },
-      { id: '2', name: 'دقيق أبيض', qty: 3, expiry: '2027-01-15', minAlert: 5 },
-    ];
-    setInventoryList(sampleData);
+    try {
+      const results = db.getAllSync(
+        'SELECT * FROM inventory ORDER BY id DESC;'
+      );
+      setInventoryList(results);
+    } catch (error) {
+      console.error('خطأ في جلب بيانات المخزون:', error);
+    }
   };
 
   const handleSaveProduct = () => {
@@ -37,26 +59,27 @@ export default function InventoryScreen() {
       return;
     }
 
-    const newProduct = {
-      id: Math.random().toString(),
-      name: productName,
-      qty: parseInt(quantity),
-      expiry: expiryDate,
-      minAlert: parseInt(minAlert) || 0,
-    };
+    try {
+      const numQty = parseFloat(quantity) || 0;
+      const numMinAlert = parseFloat(minAlert) || 0;
 
-    // سيتم ربط هذا الجزء بـ SQLite لاحقاً لحفظ البيانات فعلياً
-    setInventoryList([newProduct, ...inventoryList]);
-    
-    // تفريغ الحقول بعد الحفظ
-    setProductName('');
-    setQuantity('');
-    setExpiryDate('');
-    setMinAlert('');
+      db.runSync(
+        'INSERT INTO inventory (name, qty, expiry, minAlert) VALUES (?, ?, ?, ?);',
+        [productName, numQty, expiryDate, numMinAlert]
+      );
+
+      setProductName('');
+      setQuantity('');
+      setExpiryDate('');
+      setMinAlert('');
+      fetchInventory();
+    } catch (error) {
+      console.error('خطأ في حفظ المنتج:', error);
+      Alert.alert('خطأ', 'فشل حفظ المنتج في قاعدة البيانات.');
+    }
   };
 
   const renderProductItem = ({ item }) => {
-    // تحديد حالة المخزون لتلوين التنبيهات
     const isLowStock = item.qty <= item.minAlert;
     
     return (
@@ -128,6 +151,7 @@ export default function InventoryScreen() {
           keyExtractor={item => item.id.toString()}
           renderItem={renderProductItem}
           showsVerticalScrollIndicator={false}
+          ListEmptyComponent={<Text style={styles.emptyText}>لا توجد بضائع مسجلة حالياً.</Text>}
         />
       </View>
     </KeyboardAvoidingView>
@@ -171,7 +195,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   saveButton: {
-    backgroundColor: '#10B981', // لون أخضر يوحي بالحفظ والإضافة
+    backgroundColor: '#10B981',
     borderRadius: 12,
     padding: 15,
     alignItems: 'center',
@@ -192,7 +216,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   borderNormal: { borderRightColor: '#3B82F6' },
-  borderWarning: { borderRightColor: '#F59E0B' }, // لون برتقالي للتنبيه
+  borderWarning: { borderRightColor: '#F59E0B' },
   cardHeader: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
@@ -210,5 +234,5 @@ const styles = StyleSheet.create({
   detailText: { fontSize: 14, color: '#64748B' },
   highlight: { fontWeight: 'bold', color: '#0F172A' },
   highlightAlert: { fontWeight: 'bold', color: '#F59E0B' },
+  emptyText: { textAlign: 'center', color: '#94A3B8', marginTop: 20, fontSize: 14 },
 });
-
