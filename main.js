@@ -9,8 +9,9 @@ function startServer() {
   const distDir = path.join(__dirname, 'dist');
   
   const server = http.createServer((req, res) => {
-    let filePath = path.join(distDir, req.url === '/' ? 'index.html' : req.url);
-    
+  const safeUrl = (typeof req.url === 'string' && req.url !== '/') ? req.url : 'index.html';
+let filePath = path.join(distDir, safeUrl);
+   
     if (!filePath.startsWith(distDir)) {
       res.writeHead(403);
       res.end('Forbidden');
