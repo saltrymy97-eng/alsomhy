@@ -11,8 +11,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as SQLite from 'expo-sqlite';
-import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import * as XLSX from 'xlsx';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -41,7 +39,6 @@ export default function ReportsScreen() {
   const initTablesAndFetchData = () => {
     try {
       setLoading(true);
-      // التأكد من وجود الجداول الأساسية (المبيعات، المشتريات، المصروفات)
       db.execSync(`
         CREATE TABLE IF NOT EXISTS sales (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,7 +58,6 @@ export default function ReportsScreen() {
         );
       `);
 
-      // جلب الإجماليات العامة
       const salesRes = db.getAllSync('SELECT SUM(total_amount) as total FROM sales;');
       const purchasesRes = db.getAllSync('SELECT SUM(total_amount) as total FROM purchases;');
       const expensesRes = db.getAllSync('SELECT SUM(amount) as total FROM expenses;');
@@ -71,12 +67,10 @@ export default function ReportsScreen() {
       const totalExpenses = expensesRes[0]?.total || 0;
       const netIncome = totalSales - (totalPurchases + totalExpenses);
 
-      // جلب الحركات لتشكيل تقرير تفصيلي قابل للتصدير
       const allSales = db.getAllSync('SELECT id, total_amount, created_at FROM sales ORDER BY id DESC;');
       const allPurchases = db.getAllSync('SELECT id, total_amount, created_at FROM purchases ORDER BY id DESC;');
       const allExpenses = db.getAllSync('SELECT id, amount, description, created_at FROM expenses ORDER BY id DESC;');
 
-      // تجميع تقرير موحد للعرض والتصدير
       const formattedDetails = [
         ...allSales.map(s => ({ البند: 'مبيعات', المبلغ: s.total_amount, البيان: 'إيراد مبيعات', التاريخ: s.created_at })),
         ...allPurchases.map(p => ({ البند: 'مشتريات', المبلغ: p.total_amount, البيان: 'شراء بضاعة', التاريخ: p.created_at })),
@@ -89,7 +83,7 @@ export default function ReportsScreen() {
         totalPurchases,
         totalExpenses,
         netIncome,
-        monthlySales: totalSales, // يمكن تخصيصها بفلترة التاريخ الشمسي/القمري حسب الحاجة
+        monthlySales: totalSales,
         monthlyPurchases: totalPurchases,
         monthlyExpenses: totalExpenses,
         monthlyNetIncome: netIncome,
@@ -102,9 +96,9 @@ export default function ReportsScreen() {
     }
   };
 
-  // 1. تصدير البيانات إلى ملف Excel (.xlsx)
-  const handleExportToExcel = async () => {
-    if (reportDetails.length === 0) {
+  // 1. تصدير البيانات إلى ملف Excel (.xlsx) عبر المتصفح
+  const handleExportToExcel = () => {
+    if (!reportDetails || reportDetails.length === 0) {
       Alert.alert('تنبيه', 'لا توجد بيانات مالية كافية لتصديرها.');
       return;
     }
@@ -120,27 +114,17 @@ export default function ReportsScreen() {
       const worksheet = XLSX.utils.json_to_sheet(worksheetData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'قائمة الدخل والتقارير');
-
-      const base64Data = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
-      const filePath = `${FileSystem.documentDirectory}Financial_Report_${Date.now()}.xlsx`;
-
-      await FileSystem.writeAsStringAsync(filePath, base64Data, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      await Sharing.shareAsync(filePath, {
-        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        dialogTitle: 'حفظ تقرير الإكسل المالي',
-      });
+      
+      XLSX.writeFile(workbook, `Financial_Report_${Date.now()}.xlsx`);
     } catch (error) {
       console.error('خطأ في تصدير الإكسل:', error);
       Alert.alert('خطأ', 'فشل تصدير ملف الإكسل.');
     }
   };
 
-  // 2. تصدير البيانات إلى صفحة HTML فاخرة ومصممة للطباعة
-  const handleExportToHTML = async () => {
-    if (reportDetails.length === 0) {
+  // 2. تصدير البيانات إلى صفحة HTML وعرضها للطباعة
+  const handleExportToHTML = () => {
+    if (!reportDetails || reportDetails.length === 0) {
       Alert.alert('تنبيه', 'لا توجد بيانات كافية لإنشاء التقرير.');
       return;
     }
@@ -216,19 +200,20 @@ export default function ReportsScreen() {
               <p>تم استخراج هذا التقرير آلياً عبر تطبيق إدارة البقالات الذكي</p>
             </div>
           </div>
+          <script>
+            window.onload = () => { window.print(); };
+          </script>
         </body>
         </html>
       `;
 
-      const filePath = `${FileSystem.documentDirectory}Financial_Report_${Date.now()}.html`;
-      await FileSystem.writeAsStringAsync(filePath, htmlContent, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
-
-      await Sharing.shareAsync(filePath, {
-        mimeType: 'text/html',
-        dialogTitle: 'عرض وطباعة التقرير المالي',
-      });
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const printWindow = window.open(url, '_blank');
+      
+      if (!printWindow) {
+        alert('يرجى السماح بفتح النوافذ المنبثقة لعرض التقرير');
+      }
     } catch (error) {
       console.error('خطأ في تصدير HTML:', error);
       Alert.alert('خطأ', 'فشل تصدير التقرير للطباعة.');
@@ -249,13 +234,11 @@ export default function ReportsScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
-        {/* Header */}
         <View style={styles.headerContainer}>
           <Text style={styles.headerTitle}>التقارير وقائمة الدخل</Text>
           <Text style={styles.headerSubtitle}>تحليل الأداء المالي والموقف العام للبقالة</Text>
         </View>
 
-        {/* 1. بطاقات الأداء المالي وملخص الدخل */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>الملخص المالي الشامل</Text>
           
@@ -277,7 +260,6 @@ export default function ReportsScreen() {
             </View>
           </View>
 
-          {/* بطاقة صافي الدخل الكبرى */}
           <View style={styles.netIncomeCard}>
             <View style={styles.netIncomeHeader}>
               <View>
@@ -292,7 +274,6 @@ export default function ReportsScreen() {
           </View>
         </View>
 
-        {/* 2. أزرار التصدير الذكي (متوافقة مع دوال التصدير) */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>تصدير التقارير والملفات</Text>
           <View style={styles.exportButtonsRow}>
@@ -316,7 +297,6 @@ export default function ReportsScreen() {
           </View>
         </View>
 
-        {/* 3. سجل الحركات التحليلية المصغرة */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>آخر العمليات المدرجة في التقرير</Text>
           {reportDetails.length === 0 ? (
@@ -352,214 +332,38 @@ export default function ReportsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  scrollContent: {
-    paddingBottom: 30,
-  },
-  loaderContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    gap: 12,
-  },
-  loaderText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  headerContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
-    alignItems: 'flex-start',
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#0F172A',
-    textAlign: 'right',
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    textAlign: 'right',
-    marginTop: 2,
-  },
-  sectionContainer: {
-    paddingHorizontal: 20,
-    marginTop: 18,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-    textAlign: 'right',
-    marginBottom: 10,
-  },
-  summaryGrid: {
-    flexDirection: 'row-reverse',
-    gap: 12,
-    marginBottom: 12,
-  },
-  card: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
-    alignItems: 'flex-start',
-  },
-  salesCard: {
-    borderRightWidth: 4,
-    borderRightColor: '#10B981',
-  },
-  expensesCard: {
-    borderRightWidth: 4,
-    borderRightColor: '#EF4444',
-  },
-  cardTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 8,
-  },
-  cardValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  currency: {
-    fontSize: 11,
-    fontWeight: '400',
-    color: '#64748B',
-  },
-  netIncomeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRightWidth: 4,
-    borderRightColor: '#2563EB',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  netIncomeHeader: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  netIncomeTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1E293B',
-    textAlign: 'right',
-  },
-  netIncomeSubtitle: {
-    fontSize: 11,
-    color: '#64748B',
-    textAlign: 'right',
-    marginTop: 2,
-  },
-  netIncomeValue: {
-    fontSize: 22,
-    fontWeight: '800',
-    textAlign: 'right',
-    marginTop: 6,
-  },
-  currencyLarge: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#64748B',
-  },
-  exportButtonsRow: {
-    flexDirection: 'row-reverse',
-    gap: 12,
-  },
-  exportButton: {
-    flex: 1,
-    flexDirection: 'row-reverse',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  excelButton: {
-    backgroundColor: '#059669',
-  },
-  htmlButton: {
-    backgroundColor: '#2563EB',
-  },
-  exportButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  historyRow: {
-    backgroundColor: '#FFFFFF',
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  historyRowRight: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 10,
-  },
-  historyItemTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1E293B',
-    textAlign: 'right',
-  },
-  historyItemDate: {
-    fontSize: 10,
-    color: '#94A3B8',
-    marginTop: 2,
-    textAlign: 'right',
-  },
-  historyItemAmount: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  emptyContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    gap: 8,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: '#94A3B8',
-    fontWeight: '500',
-  },
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  scrollContent: { paddingBottom: 30 },
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC', gap: 12 },
+  loaderText: { fontSize: 14, color: '#64748B', fontWeight: '600' },
+  headerContainer: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8, alignItems: 'flex-start' },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: '#0F172A', textAlign: 'right' },
+  headerSubtitle: { fontSize: 13, color: '#64748B', textAlign: 'right', marginTop: 2 },
+  sectionContainer: { paddingHorizontal: 20, marginTop: 18 },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#1E293B', textAlign: 'right', marginBottom: 10 },
+  summaryGrid: { flexDirection: 'row-reverse', gap: 12, marginBottom: 12 },
+  card: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#F1F5F9', elevation: 2, alignItems: 'flex-start' },
+  salesCard: { borderRightWidth: 4, borderRightColor: '#10B981' },
+  expensesCard: { borderRightWidth: 4, borderRightColor: '#EF4444' },
+  cardTitle: { fontSize: 12, fontWeight: '600', color: '#64748B', marginTop: 8 },
+  cardValue: { fontSize: 16, fontWeight: '700', marginTop: 4 },
+  currency: { fontSize: 11, fontWeight: '400', color: '#64748B' },
+  netIncomeCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#E2E8F0', borderRightWidth: 4, borderRightColor: '#2563EB', elevation: 3 },
+  netIncomeHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  netIncomeTitle: { fontSize: 14, fontWeight: '700', color: '#1E293B', textAlign: 'right' },
+  netIncomeSubtitle: { fontSize: 11, color: '#64748B', textAlign: 'right', marginTop: 2 },
+  netIncomeValue: { fontSize: 22, fontWeight: '800', textAlign: 'right', marginTop: 6 },
+  currencyLarge: { fontSize: 13, fontWeight: '500', color: '#64748B' },
+  exportButtonsRow: { flexDirection: 'row-reverse', gap: 12 },
+  exportButton: { flex: 1, flexDirection: 'row-reverse', justifyContent: 'center', alignItems: 'center', paddingVertical: 12, borderRadius: 12, gap: 8, elevation: 2 },
+  excelButton: { backgroundColor: '#059669' },
+  htmlButton: { backgroundColor: '#2563EB' },
+  exportButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  historyRow: { backgroundColor: '#FFFFFF', flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: '#F1F5F9' },
+  historyRowRight: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10 },
+  historyItemTitle: { fontSize: 13, fontWeight: '600', color: '#1E293B', textAlign: 'right' },
+  historyItemDate: { fontSize: 10, color: '#94A3B8', marginTop: 2, textAlign: 'right' },
+  historyItemAmount: { fontSize: 13, fontWeight: '700' },
+  emptyContainer: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#F1F5F9', gap: 8 },
+  emptyText: { fontSize: 13, color: '#94A3B8', fontWeight: '500' },
 });
