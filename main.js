@@ -43,16 +43,12 @@ ipcMain.handle('db-query', async (event, arg1, arg2) => {
   params = params || [];
 
   try {
-    const trimmedSql = sql.trim().toUpperCase();
+    const stmt = db.prepare(sql);
     
-    // إذا كان الاستعلام قراءة (SELECT)
-    if (trimmedSql.startsWith('SELECT') || trimmedSql.startsWith('PRAGMA')) {
-      const stmt = db.prepare(sql);
+    // التمييز التلقائي التام بين استعلامات القراءة والكتابة
+    if (stmt.reader) {
       return stmt.all(params);
-    } 
-    // إذا كان الاستعلام تعديل/إضافة/حذف (INSERT, UPDATE, DELETE, CREATE)
-    else {
-      const stmt = db.prepare(sql);
+    } else {
       const info = stmt.run(params);
       return { lastInsertRowId: info.lastInsertRowid, changes: info.changes };
     }
@@ -138,8 +134,9 @@ function startServer() {
 
 function createWindow(port) {
   const win = new BrowserWindow({
-    width: 1200,
+    width: 1280,
     height: 800,
+    autoHideMenuBar: true, // إخفاء شريط القوائم العلوي لتصميم أكثر احترافية
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
