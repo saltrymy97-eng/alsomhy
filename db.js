@@ -1,9 +1,49 @@
+import { Platform } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 
-// فتح قاعدة البيانات باستخدام الواجهة المتزامنة الحديثة والمتوافقة مع الويب
-const db = SQLite.openDatabaseSync('accounting.db');
+// محاولة فتح قاعدة البيانات بأمان تام لمنع انهيار التطبيق على الويب أو الويندوز
+let rawDb = null;
+try {
+  rawDb = SQLite.openDatabaseSync('accounting.db');
+} catch (error) {
+  console.log("قاعدة البيانات المحلية غير مدعومة مباشرة في هذه البيئة:", error);
+}
+
+// كائن آمن يغلف دوال قاعدة البيانات لمنع ظهور الشاشة البيضاء بالكامل دون تعديل أي شاشة
+const db = {
+  execSync: (query) => {
+    if (!rawDb) return null;
+    try {
+      return rawDb.execSync(query);
+    } catch (e) {
+      console.error("خطأ في execSync:", e);
+    }
+  },
+  runSync: (query, params = []) => {
+    if (!rawDb) return { lastInsertRowId: 0, changes: 0 };
+    try {
+      return rawDb.runSync(query, params);
+    } catch (e) {
+      console.error("خطأ في runSync:", e);
+    }
+  },
+  getAllSync: (query, params = []) => {
+    if (!rawDb) return [];
+    try {
+      return rawDb.getAllSync(query, params);
+    } catch (e) {
+      console.error("خطأ في getAllSync:", e);
+      return [];
+    }
+  }
+};
 
 export const initDB = () => {
+  if (!rawDb) {
+    console.log("تم تخطي تهيئة قاعدة البيانات لأن البيئة الحالية لا تدعم SQLite المحلي.");
+    return false;
+  }
+
   try {
     // 1. جدول السجل اليومي (المبيعات، المشتريات، الصافي)
     db.execSync(`
@@ -69,5 +109,5 @@ export const initDB = () => {
   }
 };
 
-// تصدير كائن قاعدة البيانات لاستخدامه في باقي الملفات
+// تصدير كائن قاعدة البيانات الآمن لاستخدامه في باقي الملفات دون أي تغيير فيها
 export default db;
