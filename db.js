@@ -1,52 +1,68 @@
-import { Platform } from 'react-native';
-import * as SQLite from 'expo-sqlite';
+// db.js - وسيط قاعدة البيانات لبيئة Electron / Desktop
+// تم حذف expo-sqlite تماماً لمنع أخطاء t.join is not a function
 
-// محاولة فتح قاعدة البيانات بأمان تام لمنع انهيار التطبيق على الويب أو الويندوز
-let rawDb = null;
-try {
-  rawDb = SQLite.openDatabaseSync('accounting.db');
-} catch (error) {
-  console.log("قاعدة البيانات المحلية غير مدعومة مباشرة في هذه البيئة:", error);
-}
+// فحص ما إذا كان التطبيق يعمل داخل بيئة Electron وعبر الجسر الآمن
+const checkElectron = () => typeof window !== 'undefined' && window.api && window.api.dbQuery;
 
-// كائن آمن يغلف دوال قاعدة البيانات لمنع ظهور الشاشة البيضاء بالكامل دون تعديل أي شاشة
+// كائن آمن يغلف دوال قاعدة البيانات لإرسال الاستعلامات إلى Main Process
 const db = {
-  execSync: (query) => {
-    if (!rawDb) return null;
+  // تنفيذ أوامر إنشاء الجداول والأوامر الهيكلية
+  exec: async (query) => {
+    if (!checkElectron()) {
+      console.warn("تنبيه: التطبيق يعمل خارج بيئة Electron.");
+      return null;
+    }
     try {
-      return rawDb.execSync(query);
+      return await window.api.dbQuery(query, []);
     } catch (e) {
-      console.error("خطأ في execSync:", e);
+      console.error("خطأ في exec:", e);
+      throw e;
     }
   },
-  runSync: (query, params = []) => {
-    if (!rawDb) return { lastInsertRowId: 0, changes: 0 };
+
+  // تنفيذ عمليات الإضافة والتعديل والحذف (INSERT, UPDATE, DELETE)
+  run: async (query, params = []) => {
+    if (!checkElectron()) {
+      return { lastInsertRowId: 0, changes: 0 };
+    }
     try {
-      return rawDb.runSync(query, params);
+      return await window.api.dbQuery(query, params);
     } catch (e) {
-      console.error("خطأ في runSync:", e);
+      console.error("خطأ في run:", e);
+      return { lastInsertRowId: 0, changes: 0 };
     }
   },
-  getAllSync: (query, params = []) => {
-    if (!rawDb) return [];
-    try {
-      return rawDb.getAllSync(query, params);
-    } catch (e) {
-      console.error("خطأ في getAllSync:", e);
+
+  // قراءة واسترجاع البيانات (SELECT)
+  getAll: async (query, params = []) => {
+    if (!checkElectron()) {
       return [];
     }
-  }
+    try {
+      const result = await window.api.dbQuery(query, params);
+      return Array.isArray(result) ? result : [];
+    } catch (e) {
+      console.error("خطأ في getAll:", e);
+      return [];
+    }
+  },
+
+  // أسماء التوافق السابقة (مع تحويلها لـ async لضمان عدم تجميد واجهة الديسكتوب)
+  execSync: async (query) => await db.exec(query),
+  runSync: async (query, params = []) => await db.run(query, params),
+  getAllSync: async (query, params = []) => await db.getAll(query, params)
 };
 
-export const initDB = () => {
-  if (!rawDb) {
-    console.log("تم تخطي تهيئة قاعدة البيانات لأن البيئة الحالية لا تدعم SQLite المحلي.");
+// دالة تهيئة الجداول الخمسة عند تشغيل التطبيق
+export const initDB = async () => {
+  if (!checkElectron()) {
+    console.log("تم تخطي تهيئة قاعدة البيانات لأن التطبيق يعمل خارج بيئة Electron.");
     return false;
   }
 
   try {
     // 1. جدول السجل اليومي (المبيعات، المشتريات، الصافي)
-    db.execSync(`
+    await db.exec(`
       CREATE TABLE IF NOT EXISTS daily_transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL,
@@ -56,8 +72,8 @@ export const initDB = () => {
       );
     `);
 
-    // 2. جدول المخزون والتنبيهات (لمراقبة الصلاحية والنواقص فقط)
-    db.execSync(`
+    // 2. جدول المخزون والتنبيهات (لمراقبة الصلاحية والنواقص)
+    await db.exec(`
       CREATE TABLE IF NOT EXISTS inventory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         product_name TEXT NOT NULL,
@@ -68,7 +84,7 @@ export const initDB = () => {
     `);
 
     // 3. جدول النقدية (الصندوق والبنك)
-    db.execSync(`
+    await db.exec(`
       CREATE TABLE IF NOT EXISTS treasury (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         account_type TEXT NOT NULL, 
@@ -80,7 +96,7 @@ export const initDB = () => {
     `);
 
     // 4. جدول العملاء والموردين (الديون والاستحقاقات)
-    db.execSync(`
+    await db.exec(`
       CREATE TABLE IF NOT EXISTS contacts_ledger (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -92,7 +108,7 @@ export const initDB = () => {
     `);
 
     // 5. جدول المصروفات التشغيلية
-    db.execSync(`
+    await db.exec(`
       CREATE TABLE IF NOT EXISTS expenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
@@ -101,13 +117,12 @@ export const initDB = () => {
       );
     `);
 
-    console.log("تم إنشاء قاعدة البيانات والجداول بنجاح!");
+    console.log("تم إنشاء جميع الجداول الخمسة بنجاح داخل قاعدة بيانات Electron المحلية!");
     return true;
   } catch (error) {
-    console.log("حدث خطأ أثناء إنشاء الجداول: ", error);
-    throw error;
+    console.error("حدث خطأ أثناء إنشاء الجداول: ", error);
+    return false;
   }
 };
 
-// تصدير كائن قاعدة البيانات الآمن لاستخدامه في باقي الملفات دون أي تغيير فيها
 export default db;
