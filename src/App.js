@@ -38,10 +38,8 @@ export default function App() {
   // تهيئة جداول النظام الأساسية للتأكد من جاهزية التطبيق
   const initDatabase = async () => {
     try {
-      // تهيئة الجداول الرئيسية من db.js
       await initDB();
 
-      // إنشاء جدول أرصدة الخزينة إن لم يكن موجوداً
       await db.exec(`
         CREATE TABLE IF NOT EXISTS treasury_balances (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +63,7 @@ export default function App() {
       const res = await db.getAll('SELECT * FROM treasury_balances LIMIT 1;');
       if (res && res.length > 0) {
         setStats({
-          dailyNet: 15000, // يمكن ربطها بقائمة الدخل لاحقاً
+          dailyNet: 15000,
           cashBalance: res[0].cash_balance || 0,
           bankBalance: res[0].bank_balance || 0,
         });
@@ -75,7 +73,6 @@ export default function App() {
     }
   };
 
-  // تبديل الشاشات برمجياً بناءً على اختيار المستخدم
   const renderCurrentScreen = () => {
     switch (currentScreen) {
       case 'daily':
@@ -93,10 +90,13 @@ export default function App() {
     }
   };
 
-  // بطاقة إحصائية علوية
-  const StatCard = ({ title, amount, color }) => (
+  // بطاقة إحصائية علوية فاخرة
+  const StatCard = ({ title, amount, color, icon }) => (
     <View style={styles.card}>
-      <Text style={styles.cardTitle}>{title}</Text>
+      <View style={styles.cardHeader}>
+        <Text style={styles.cardIcon}>{icon}</Text>
+        <Text style={styles.cardTitle}>{title}</Text>
+      </View>
       <Text style={[styles.cardAmount, { color: color }]}>
         {amount.toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
       </Text>
@@ -108,19 +108,19 @@ export default function App() {
     const isDanger = type === 'danger';
     return (
       <View style={[styles.alertCard, isDanger ? styles.alertDanger : styles.alertWarning]}>
+        <Text style={styles.alertBadgeIcon}>{isDanger ? '⚠️' : '🔔'}</Text>
         <View style={styles.alertTextContainer}>
           <Text style={styles.alertMessage}>{message}</Text>
           <Text style={styles.alertDate}>{date}</Text>
         </View>
-        <View style={[styles.alertIndicator, isDanger ? styles.bgRed : styles.bgOrange]} />
       </View>
     );
   };
 
   // زر التنقل في الشبكة الرئيسية
-  const MenuButton = ({ title, icon, action }) => (
-    <TouchableOpacity style={styles.menuButton} onPress={() => setCurrentScreen(action)} activeOpacity={0.8}>
-      <View style={styles.menuIconPlaceholder}>
+  const MenuButton = ({ title, icon, action, bgGlow }) => (
+    <TouchableOpacity style={styles.menuButton} onPress={() => setCurrentScreen(action)} activeOpacity={0.85}>
+      <View style={[styles.menuIconPlaceholder, { backgroundColor: bgGlow }]}>
         <Text style={styles.menuIconText}>{icon}</Text>
       </View>
       <Text style={styles.menuButtonText}>{title}</Text>
@@ -134,11 +134,11 @@ export default function App() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>المركز المالي اليومي</Text>
         <View style={styles.statsRow}>
-          <StatCard title="صافي اليوم" amount={stats.dailyNet} color="#10B981" />
-          <StatCard title="الصندوق" amount={stats.cashBalance} color="#3B82F6" />
+          <StatCard title="صافي اليوم" amount={stats.dailyNet} color="#10B981" icon="📈" />
+          <StatCard title="الصندوق" amount={stats.cashBalance} color="#2563EB" icon="💵" />
         </View>
         <View style={styles.statsRow}>
-          <StatCard title="البنك" amount={stats.bankBalance} color="#6366F1" />
+          <StatCard title="البنك" amount={stats.bankBalance} color="#4F46E5" icon="🏦" />
         </View>
       </View>
 
@@ -146,18 +146,18 @@ export default function App() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>التنبيهات العاجلة</Text>
         <AlertCard type="danger" message="استحقاق ديون عملاء مستحقة اليوم" date="اليوم" />
-        <AlertCard type="warning" message="مراجعة أرصدة الخزينة والمخزون" date="دوري" />
+        <AlertCard type="warning" message="مراجعة أرصدة الخزينة والمخزون الدوري" date="دوري" />
       </View>
 
       {/* أزرار العمليات والوصول السريع */}
-      <View style={[styles.section, { marginBottom: 30 }]}>
+      <View style={[styles.section, { marginBottom: 35 }]}>
         <Text style={styles.sectionTitle}>العمليات السريعة</Text>
         <View style={styles.menuGrid}>
-          <MenuButton title="حركة اليوم" icon="🛒" action="daily" />
-          <MenuButton title="المخزون" icon="📦" action="inventory" />
-          <MenuButton title="النقدية" icon="💰" action="treasury" />
-          <MenuButton title="الديون" icon="👥" action="contacts" />
-          <MenuButton title="التقارير" icon="📊" action="reports" />
+          <MenuButton title="حركة اليوم" icon="🛒" action="daily" bgGlow="#EFF6FF" />
+          <MenuButton title="المخزون" icon="📦" action="inventory" bgGlow="#F0FDF4" />
+          <MenuButton title="النقدية" icon="💰" action="treasury" bgGlow="#FEF3C7" />
+          <MenuButton title="الديون" icon="👥" action="contacts" bgGlow="#EEF2FF" />
+          <MenuButton title="التقارير" icon="📊" action="reports" bgGlow="#F3E8FF" />
         </View>
       </View>
     </ScrollView>
@@ -165,18 +165,20 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       
       {/* الشريط العلوي الفاخر */}
       <View style={styles.header}>
         {currentScreen !== 'dashboard' ? (
           <TouchableOpacity onPress={() => setCurrentScreen('dashboard')} style={styles.backButton}>
-            <Text style={styles.backButtonText}>{"< عودة للرئيسية"}</Text>
+            <Text style={styles.backButtonText}>{"➔ عودة للرئيسية"}</Text>
           </TouchableOpacity>
         ) : (
-          <View style={{ width: 40 }} />
+          <View style={styles.logoBadge}>
+            <Text style={styles.logoIcon}>⚖️</Text>
+          </View>
         )}
-        <Text style={styles.headerTitle}>نظام الإدارة الشامل</Text>
+        <Text style={styles.headerTitle}>نظام الميزان المحاسبي</Text>
         <View style={styles.dateBadge}>
           <Text style={styles.dateText}>أغسطس 2026</Text>
         </View>
@@ -192,90 +194,121 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F1F5F9', // خلفية رمادية فائقة النعومة لإبراز البطاقات البيضاء
   },
   header: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingVertical: 14,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 3,
   },
   headerTitle: {
-    fontSize: 19,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '900',
     color: '#0F172A',
     textAlign: 'center',
+  },
+  logoBadge: {
+    backgroundColor: '#F8FAFC',
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  logoIcon: {
+    fontSize: 18,
   },
   dateBadge: {
     backgroundColor: '#EEF2FF',
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
   },
   dateText: {
-    color: '#4F46E5',
-    fontWeight: '600',
+    color: '#4338CA',
+    fontWeight: '700',
     fontSize: 11,
   },
   backButton: {
-    paddingVertical: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   backButtonText: {
-    color: '#3B82F6',
+    color: '#2563EB',
     fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 13,
   },
   scrollArea: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   section: {
-    marginTop: 22,
+    marginTop: 20,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#334155',
-    marginBottom: 12,
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginBottom: 10,
     textAlign: 'right',
   },
   statsRow: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
     gap: 10,
   },
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 14,
+    padding: 14,
     flex: 1,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
     shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
     elevation: 2,
   },
-  cardTitle: {
-    fontSize: 13,
-    color: '#64748B',
+  cardHeader: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 6,
+  },
+  cardIcon: {
+    fontSize: 16,
+  },
+  cardTitle: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '700',
     textAlign: 'right',
-    fontWeight: '600',
   },
   cardAmount: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 19,
+    fontWeight: '900',
     textAlign: 'right',
   },
   currency: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'normal',
     color: '#94A3B8',
   },
@@ -284,27 +317,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 14,
+    padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
-    borderRightWidth: 4,
+    borderColor: '#E2E8F0',
+    borderRightWidth: 5,
     shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 5,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
     elevation: 1,
   },
   alertDanger: { borderRightColor: '#EF4444' },
   alertWarning: { borderRightColor: '#F59E0B' },
+  alertBadgeIcon: {
+    fontSize: 16,
+    marginLeft: 8,
+  },
   alertTextContainer: {
     flex: 1,
     alignItems: 'flex-end',
-    marginRight: 12,
   },
   alertMessage: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#1E293B',
     textAlign: 'right',
   },
@@ -313,49 +349,40 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
   },
-  alertIndicator: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  bgRed: { backgroundColor: '#EF4444' },
-  bgOrange: { backgroundColor: '#F59E0B' },
   menuGrid: {
     flexDirection: 'row-reverse',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
   },
   menuButton: {
     backgroundColor: '#FFFFFF',
-    width: '30%',
+    width: '31%',
     aspectRatio: 1,
-    borderRadius: 16,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
     shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 2,
   },
   menuIconPlaceholder: {
-    width: 42,
-    height: 42,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   menuIconText: {
-    fontSize: 20,
+    fontSize: 22,
   },
   menuButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
     color: '#334155',
   },
 });
