@@ -19,11 +19,16 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Export Expo Web
+      - name: Build Clean React App
         env:
           CI: false
           GENERATE_SOURCEMAP: false
-        run: npx expo export -p web --clear
+        # بناء الواجهة باستخدام React بدون Expo
+        run: npm run build
+
+      - name: Rename build folder to dist
+        # تغيير اسم المجلد ليتوافق مع main.js
+        run: Rename-Item -Path "build" -NewName "dist"
 
       - name: Build with Electron Builder
         run: npx electron-builder --win --publish never
