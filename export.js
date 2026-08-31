@@ -32,6 +32,19 @@ export const exportToHTML = (reportTitle, data, fileName = 'Report') => {
       return false;
     }
 
+    // 1. بناء رأس الجدول بأمان تام باستخدام reduce (بدون استخدام join نهائياً)
+    const tableHeadersHtml = headers.reduce((acc, h) => acc + `<th>${h}</th>`, '');
+
+    // 2. بناء صفوف وخلايا الجدول بأمان تام باستخدام reduce متداخلة
+    const tableRowsHtml = data.reduce((accRow, row) => {
+      const cellsHtml = headers.reduce((accCell, key) => {
+        const cellValue = row && row[key] !== undefined ? row[key] : '';
+        return accCell + `<td>${cellValue}</td>`;
+      }, '');
+      return accRow + `<tr>${cellsHtml}</tr>`;
+    }, '');
+
+    // 3. حقن المتغيرات الجاهزة داخل القالب لتفادي تعقيدات ضغط الأكواد
     const htmlContent = `
       <!DOCTYPE html>
       <html dir="rtl" lang="ar">
@@ -55,15 +68,11 @@ export const exportToHTML = (reportTitle, data, fileName = 'Report') => {
           <table>
             <thead>
               <tr>
-                ${headers.map(h => `<th>${h}</th>`).join('')}
+                ${tableHeadersHtml}
               </tr>
             </thead>
             <tbody>
-              ${data.map(row => `
-                <tr>
-                  ${headers.map(key => `<td>${row && row[key] !== undefined ? row[key] : ''}</td>`).join('')}
-                </tr>
-              `).join('')}
+              ${tableRowsHtml}
             </tbody>
           </table>
           <div class="footer">
