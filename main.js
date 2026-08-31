@@ -76,8 +76,9 @@ function createWindow(port) {
     width: 1200,
     height: 800,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      preload: path.join(__dirname, 'preload.js'), // ربط ملف الجسر الآمن
+      nodeIntegration: false,    // تعطيل دمج Node في الواجهة لمنع الانهيار الأمني والتقني
+      contextIsolation: true     // تفعيل العزل الأمني الإلزامي لتطبيقات Electron الحديثة
     }
   });
 
