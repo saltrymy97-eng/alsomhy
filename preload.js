@@ -1,6 +1,19 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// إنشاء جسر آمن ومحترف يربط واجهة الويب بنظام التشغيل عبر Electron
+// ==========================================
+// 1. جسر الاتصال بقاعدة البيانات (window.api)
+// ==========================================
+contextBridge.exposeInMainWorld('api', {
+  // إرسال استعلامات SQL إلى خلفية Electron (Main Process)
+  dbQuery: (sql, params = []) => ipcRenderer.invoke('db-query', sql, params),
+  
+  // إرسال أمر تهيئة قاعدة البيانات عند التشغيل
+  initDB: () => ipcRenderer.invoke('db-init')
+});
+
+// ==========================================
+// 2. الجسر العام والآمن للتطبيق (window.electronAPI)
+// ==========================================
 contextBridge.exposeInMainWorld('electronAPI', {
   // معلومات البيئة الأساسية
   platform: process.platform,
