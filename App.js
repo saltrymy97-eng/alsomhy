@@ -8,7 +8,9 @@ import {
   TouchableOpacity, 
   StatusBar 
 } from 'react-native';
-import * as SQLite from 'expo-sqlite';
+
+// استيراد وسيط قاعدة البيانات المحلي للديسكتوب
+import db, { initDB } from './db';
 
 // الاستيراد الفعلي للشاشات المطلوبة من مجلد screens
 import DailyLogScreen from './screens/DailyLogScreen';
@@ -16,9 +18,6 @@ import InventoryScreen from './screens/InventoryScreen';
 import TreasuryScreen from './screens/TreasuryScreen';
 import ContactsScreen from './screens/ContactsScreen';
 import ReportsScreen from './screens/ReportsScreen';
-
-// فتح أو إنشاء قاعدة البيانات المركزية
-const db = SQLite.openDatabaseSync('accounting.db');
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('dashboard');
@@ -29,14 +28,21 @@ export default function App() {
   });
 
   useEffect(() => {
-    initDatabase();
-    fetchDashboardStats();
+    const loadAppData = async () => {
+      await initDatabase();
+      await fetchDashboardStats();
+    };
+    loadAppData();
   }, [currentScreen]);
 
   // تهيئة جداول النظام الأساسية للتأكد من جاهزية التطبيق
-  const initDatabase = () => {
+  const initDatabase = async () => {
     try {
-      db.execSync(`
+      // تهيئة الجداول الرئيسية من db.js
+      await initDB();
+
+      // إنشاء جدول أرصدة الخزينة إن لم يكن موجوداً
+      await db.exec(`
         CREATE TABLE IF NOT EXISTS treasury_balances (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           cash_balance REAL DEFAULT 0,
@@ -44,9 +50,9 @@ export default function App() {
         );
       `);
       
-      const res = db.getAllSync('SELECT * FROM treasury_balances;');
-      if (res.length === 0) {
-        db.runSync('INSERT INTO treasury_balances (cash_balance, bank_balance) VALUES (0, 0);');
+      const res = await db.getAll('SELECT * FROM treasury_balances;');
+      if (!res || res.length === 0) {
+        await db.run('INSERT INTO treasury_balances (cash_balance, bank_balance) VALUES (0, 0);');
       }
     } catch (error) {
       console.error('خطأ في تهيئة قاعدة البيانات الرئيسية:', error);
@@ -54,10 +60,10 @@ export default function App() {
   };
 
   // جلب الأرصدة لعرضها في لوحة التحكم
-  const fetchDashboardStats = () => {
+  const fetchDashboardStats = async () => {
     try {
-      const res = db.getAllSync('SELECT * FROM treasury_balances LIMIT 1;');
-      if (res.length > 0) {
+      const res = await db.getAll('SELECT * FROM treasury_balances LIMIT 1;');
+      if (res && res.length > 0) {
         setStats({
           dailyNet: 15000, // يمكن ربطها بقائمة الدخل لاحقاً
           cashBalance: res[0].cash_balance || 0,
