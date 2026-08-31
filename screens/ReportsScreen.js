@@ -10,12 +10,9 @@ import {
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
-import * as SQLite from 'expo-sqlite';
+import db from '../db';
 import * as XLSX from 'xlsx';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-
-// فتح أو إنشاء قاعدة البيانات
-const db = SQLite.openDatabaseSync('accounting.db');
 
 export default function ReportsScreen() {
   const [loading, setLoading] = useState(true);
@@ -35,21 +32,25 @@ export default function ReportsScreen() {
     initTablesAndFetchData();
   }, []);
 
-  // تهيئة الجداول وجلب وحساب البيانات المالية
-  const initTablesAndFetchData = () => {
+  // تهيئة الجداول وجلب وحساب البيانات المالية بشكل لامتزامن
+  const initTablesAndFetchData = async () => {
     try {
       setLoading(true);
-      db.execSync(`
+      await db.query(`
         CREATE TABLE IF NOT EXISTS sales (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           total_amount REAL NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+      `);
+      await db.query(`
         CREATE TABLE IF NOT EXISTS purchases (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           total_amount REAL NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+      `);
+      await db.query(`
         CREATE TABLE IF NOT EXISTS expenses (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           amount REAL NOT NULL,
@@ -58,18 +59,18 @@ export default function ReportsScreen() {
         );
       `);
 
-      const salesRes = db.getAllSync('SELECT SUM(total_amount) as total FROM sales;');
-      const purchasesRes = db.getAllSync('SELECT SUM(total_amount) as total FROM purchases;');
-      const expensesRes = db.getAllSync('SELECT SUM(amount) as total FROM expenses;');
+      const salesRes = await db.query('SELECT SUM(total_amount) as total FROM sales;');
+      const purchasesRes = await db.query('SELECT SUM(total_amount) as total FROM purchases;');
+      const expensesRes = await db.query('SELECT SUM(amount) as total FROM expenses;');
 
-      const totalSales = salesRes[0]?.total || 0;
-      const totalPurchases = purchasesRes[0]?.total || 0;
-      const totalExpenses = expensesRes[0]?.total || 0;
+      const totalSales = salesRes?.[0]?.total || 0;
+      const totalPurchases = purchasesRes?.[0]?.total || 0;
+      const totalExpenses = expensesRes?.[0]?.total || 0;
       const netIncome = totalSales - (totalPurchases + totalExpenses);
 
-      const allSales = db.getAllSync('SELECT id, total_amount, created_at FROM sales ORDER BY id DESC;');
-      const allPurchases = db.getAllSync('SELECT id, total_amount, created_at FROM purchases ORDER BY id DESC;');
-      const allExpenses = db.getAllSync('SELECT id, amount, description, created_at FROM expenses ORDER BY id DESC;');
+      const allSales = (await db.query('SELECT id, total_amount, created_at FROM sales ORDER BY id DESC;')) || [];
+      const allPurchases = (await db.query('SELECT id, total_amount, created_at FROM purchases ORDER BY id DESC;')) || [];
+      const allExpenses = (await db.query('SELECT id, amount, description, created_at FROM expenses ORDER BY id DESC;')) || [];
 
       const formattedDetails = [
         ...allSales.map(s => ({ البند: 'مبيعات', المبلغ: s.total_amount, البيان: 'إيراد مبيعات', التاريخ: s.created_at })),
@@ -98,7 +99,6 @@ export default function ReportsScreen() {
 
   // 1. تصدير البيانات إلى ملف Excel (.xlsx) عبر المتصفح
   const handleExportToExcel = () => {
-    // التحقق الآمن من المصفوفة
     if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
       Alert.alert('تنبيه', 'لا توجد بيانات مالية كافية لتصديرها.');
       return;
@@ -125,24 +125,20 @@ export default function ReportsScreen() {
 
   // 2. تصدير البيانات إلى صفحة HTML وعرضها للطباعة
   const handleExportToHTML = () => {
-    // 1. التحقق الآمن من أن البيانات مصفوفة فعلية وليست فارغة
     if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
       Alert.alert('تنبيه', 'لا توجد بيانات كافية لإنشاء التقرير.');
       return;
     }
 
     try {
-      // 2. تأمين القيم المالية لتفادي أخطاء NaN أو undefined
       const safeTotalSales = Number(financialData?.totalSales) || 0;
       const safeTotalExpensesAndPurchases = (Number(financialData?.totalPurchases) || 0) + (Number(financialData?.totalExpenses) || 0);
       const safeNetIncome = Number(financialData?.netIncome) || 0;
 
-      // 3. بناء صفوف الجدول باستخدام حلقة for تقليدية (للاستغناء عن map و join تماماً)
       let tableRows = '';
       for (let i = 0; i < reportDetails.length; i++) {
         const item = reportDetails[i];
         
-        // تأمين القيم لكل عنصر في المصفوفة
         const type = item?.البند || 'غير محدد';
         const amount = Number(item?.المبلغ) || 0;
         const desc = item?.البيان || '---';
@@ -150,7 +146,6 @@ export default function ReportsScreen() {
         
         const amountColor = type === 'مبيعات' ? '#10B981' : '#EF4444';
 
-        // إضافة الصف إلى المتغير النصي
         tableRows += `
           <tr>
             <td><b>${type}</b></td>
@@ -161,7 +156,6 @@ export default function ReportsScreen() {
         `;
       }
 
-      // 4. دمج الصفوف داخل قالب الـ HTML
       const htmlContent = `
         <!DOCTYPE html>
         <html dir="rtl" lang="ar">
@@ -254,7 +248,6 @@ export default function ReportsScreen() {
     );
   }
 
-  // استخدام خصائص آمنة لضمان عدم حدوث Crash أثناء التصيير
   const safeRenderTotalSales = Number(financialData?.totalSales) || 0;
   const safeRenderTotalExpenses = (Number(financialData?.totalPurchases) || 0) + (Number(financialData?.totalExpenses) || 0);
   const safeRenderNetIncome = Number(financialData?.netIncome) || 0;
