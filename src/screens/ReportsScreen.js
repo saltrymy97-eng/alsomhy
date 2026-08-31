@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import db from '../db';
 import * as XLSX from 'xlsx';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function ReportsScreen() {
   const [loading, setLoading] = useState(true);
@@ -267,7 +266,7 @@ export default function ReportsScreen() {
           
           <View style={styles.summaryGrid}>
             <View style={[styles.card, styles.salesCard]}>
-              <MaterialCommunityIcons name="trending-up" size={24} color="#10B981" />
+              <Text style={styles.cardIcon}>📈</Text>
               <Text style={styles.cardTitle}>إجمالي المبيعات</Text>
               <Text style={[styles.cardValue, { color: '#10B981' }]}>
                 {safeRenderTotalSales.toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
@@ -275,7 +274,7 @@ export default function ReportsScreen() {
             </View>
 
             <View style={[styles.card, styles.expensesCard]}>
-              <MaterialCommunityIcons name="trending-down" size={24} color="#EF4444" />
+              <Text style={styles.cardIcon}>📉</Text>
               <Text style={styles.cardTitle}>المشتريات والمصروفات</Text>
               <Text style={[styles.cardValue, { color: '#EF4444' }]}>
                 {safeRenderTotalExpenses.toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
@@ -289,7 +288,7 @@ export default function ReportsScreen() {
                 <Text style={styles.netIncomeTitle}>صافي الدخل النهائي (الربح الصافي)</Text>
                 <Text style={styles.netIncomeSubtitle}>المبيعات - (المشتريات + المصروفات)</Text>
               </View>
-              <MaterialCommunityIcons name="wallet-bifold" size={32} color="#2563EB" />
+              <Text style={styles.largeIcon}>💰</Text>
             </View>
             <Text style={[styles.netIncomeValue, { color: safeRenderNetIncome >= 0 ? '#10B981' : '#EF4444' }]}>
               {safeRenderNetIncome.toLocaleString()} <Text style={styles.currencyLarge}>ريال يمني</Text>
@@ -305,8 +304,7 @@ export default function ReportsScreen() {
               onPress={handleExportToExcel}
               activeOpacity={0.8}
             >
-              <MaterialCommunityIcons name="file-excel" size={22} color="#FFFFFF" />
-              <Text style={styles.exportButtonText}>تصدير إلى Excel</Text>
+              <Text style={styles.exportButtonText}>📊 تصدير إلى Excel</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
@@ -314,8 +312,7 @@ export default function ReportsScreen() {
               onPress={handleExportToHTML}
               activeOpacity={0.8}
             >
-              <MaterialCommunityIcons name="printer" size={22} color="#FFFFFF" />
-              <Text style={styles.exportButtonText}>طباعة / HTML</Text>
+              <Text style={styles.exportButtonText}>🖨️ طباعة / HTML</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -324,7 +321,7 @@ export default function ReportsScreen() {
           <Text style={styles.sectionTitle}>آخر العمليات المدرجة في التقرير</Text>
           {(!Array.isArray(reportDetails) || reportDetails.length === 0) ? (
             <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="clipboard-text-off-outline" size={42} color="#CBD5E1" />
+              <Text style={styles.emptyEmoji}>📭</Text>
               <Text style={styles.emptyText}>لا توجد حركات مسجلة حالياً لعرضها</Text>
             </View>
           ) : (
@@ -338,11 +335,7 @@ export default function ReportsScreen() {
               return (
                 <View key={index} style={styles.historyRow}>
                   <View style={styles.historyRowRight}>
-                    <MaterialCommunityIcons 
-                      name={isSale ? 'arrow-down-left' : 'arrow-up-right'} 
-                      size={20} 
-                      color={isSale ? '#10B981' : '#EF4444'} 
-                    />
+                    <Text style={styles.historyIcon}>{isSale ? '📥' : '📤'}</Text>
                     <View>
                       <Text style={styles.historyItemTitle}>{type}: {desc}</Text>
                       <Text style={styles.historyItemDate}>{date}</Text>
@@ -376,7 +369,9 @@ const styles = StyleSheet.create({
   card: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#F1F5F9', elevation: 2, alignItems: 'flex-start' },
   salesCard: { borderRightWidth: 4, borderRightColor: '#10B981' },
   expensesCard: { borderRightWidth: 4, borderRightColor: '#EF4444' },
-  cardTitle: { fontSize: 12, fontWeight: '600', color: '#64748B', marginTop: 8 },
+  cardIcon: { fontSize: 22, marginBottom: 4 },
+  largeIcon: { fontSize: 28 },
+  cardTitle: { fontSize: 12, fontWeight: '600', color: '#64748B', marginTop: 4 },
   cardValue: { fontSize: 16, fontWeight: '700', marginTop: 4 },
   currency: { fontSize: 11, fontWeight: '400', color: '#64748B' },
   netIncomeCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#E2E8F0', borderRightWidth: 4, borderRightColor: '#2563EB', elevation: 3 },
@@ -386,15 +381,17 @@ const styles = StyleSheet.create({
   netIncomeValue: { fontSize: 22, fontWeight: '800', textAlign: 'right', marginTop: 6 },
   currencyLarge: { fontSize: 13, fontWeight: '500', color: '#64748B' },
   exportButtonsRow: { flexDirection: 'row-reverse', gap: 12 },
-  exportButton: { flex: 1, flexDirection: 'row-reverse', justifyContent: 'center', alignItems: 'center', paddingVertical: 12, borderRadius: 12, gap: 8, elevation: 2 },
+  exportButton: { flex: 1, flexDirection: 'row-reverse', justifyContent: 'center', alignItems: 'center', paddingVertical: 12, borderRadius: 12, elevation: 2 },
   excelButton: { backgroundColor: '#059669' },
   htmlButton: { backgroundColor: '#2563EB' },
   exportButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
   historyRow: { backgroundColor: '#FFFFFF', flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: '#F1F5F9' },
   historyRowRight: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10 },
+  historyIcon: { fontSize: 18 },
   historyItemTitle: { fontSize: 13, fontWeight: '600', color: '#1E293B', textAlign: 'right' },
   historyItemDate: { fontSize: 10, color: '#94A3B8', marginTop: 2, textAlign: 'right' },
   historyItemAmount: { fontSize: 13, fontWeight: '700' },
   emptyContainer: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#F1F5F9', gap: 8 },
+  emptyEmoji: { fontSize: 32 },
   emptyText: { fontSize: 13, color: '#94A3B8', fontWeight: '500' },
 });
