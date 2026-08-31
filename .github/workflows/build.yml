@@ -19,15 +19,23 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Install React Native Web
+        run: npm install react-native-web react-dom
+
+      - name: Bridge React Native to Web
+        # هذا السطر ينشئ جسراً تلقائياً لكي تفهم أداة الويب مكونات الهاتف دون تعديل أكوادك
+        run: |
+          New-Item -ItemType Directory -Force -Path "node_modules/react-native"
+          Set-Content -Path "node_modules/react-native/index.js" -Value "module.exports = require('react-native-web');"
+          Set-Content -Path "node_modules/react-native/package.json" -Value '{"name": "react-native", "main": "index.js"}'
+
       - name: Build Clean React App
         env:
           CI: false
           GENERATE_SOURCEMAP: false
-        # بناء الواجهة باستخدام React بدون Expo
         run: npm run build
 
       - name: Rename build folder to dist
-        # تغيير اسم المجلد ليتوافق مع main.js
         run: Rename-Item -Path "build" -NewName "dist"
 
       - name: Build with Electron Builder
