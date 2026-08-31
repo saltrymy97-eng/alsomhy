@@ -3,47 +3,21 @@
   "version": "1.0.0",
   "main": "main.js",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
-    "build:web": "npx expo export -p web",
+    "start": "react-scripts start",
+    "build": "react-scripts build",
     "electron": "electron .",
-    "pack": "npm run build:web && electron-builder --win"
+    "pack": "npm run build && electron-builder --win"
   },
   "dependencies": {
-    "@expo/vector-icons": "^14.0.0",
-    "@expo/metro-runtime": "~3.2.3",
     "better-sqlite3": "^9.4.3",
-    "expo": "~51.0.0",
-    "expo-file-system": "~17.0.0",
-    "expo-sharing": "*",
-    "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "react-native": "0.74.1",
-    "react-native-web": "~0.19.10",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@babel/core": "^7.20.0",
     "electron": "^30.0.0",
-    "electron-builder": "^24.13.3"
-  },
-  "build": {
-    "appId": "com.alsomhy.accounting",
-    "productName": "AlsomhyAccounting",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "main.js",
-      "preload.js",
-      "package.json",
-      "dist/**/*"
-    ],
-    "win": {
-      "target": "nsis"
-    }
+    "electron-builder": "^24.13.3",
+    "react-scripts": "^5.0.1"
   },
   "private": true
 }
