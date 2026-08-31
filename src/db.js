@@ -1,45 +1,59 @@
-// db.js - وسيط قاعدة البيانات لبيئة Electron / Desktop
-// تم حذف expo-sqlite تماماً لمنع أخطاء t.join is not a function
+// db.js - وس الوسيط لقاعدة البيانات في بيئة Electron / Desktop
 
-// فحص ما إذا كان التطبيق يعمل داخل بيئة Electron وعبر الجسر الآمن
-const checkElectron = () => typeof window !== 'undefined' && window.api && window.api.dbQuery;
+const checkElectron = () => 
+  typeof window !== 'undefined' && 
+  ((window.api && window.api.dbQuery) || (window.electronAPI && window.electronAPI.query));
 
-// كائن آمن يغلف دوال قاعدة البيانات لإرسال الاستعلامات إلى Main Process
+// دالة وسيطة للتعامل مع اختلاف مسميات الجسر بين window.api و window.electronAPI
+const dbQueryBridge = async (sql, params = []) => {
+  if (window.api && typeof window.api.dbQuery === 'function') {
+    return await window.api.dbQuery(sql, params);
+  }
+  if (window.electronAPI && typeof window.electronAPI.query === 'function') {
+    return await window.electronAPI.query(sql, params);
+  }
+  return null;
+};
+
 const db = {
-  // تنفيذ أوامر إنشاء الجداول والأوامر الهيكلية
-  exec: async (query) => {
-    if (!checkElectron()) {
-      console.warn("تنبيه: التطبيق يعمل خارج بيئة Electron.");
-      return null;
-    }
+  // 1. الدالة الأساسية التي تنتظرها الشاشات (DailyLogScreen وغيرها)
+  query: async (sql, params = []) => {
+    if (!checkElectron()) return [];
     try {
-      return await window.api.dbQuery(query, []);
+      return await dbQueryBridge(sql, params);
+    } catch (e) {
+      console.error("خطأ في تنفيذ query:", e);
+      throw e;
+    }
+  },
+
+  // 2. تنفيذ الأوامر الهيكلية
+  exec: async (queryStr) => {
+    if (!checkElectron()) return null;
+    try {
+      return await dbQueryBridge(queryStr, []);
     } catch (e) {
       console.error("خطأ في exec:", e);
       throw e;
     }
   },
 
-  // تنفيذ عمليات الإضافة والتعديل والحذف (INSERT, UPDATE, DELETE)
-  run: async (query, params = []) => {
-    if (!checkElectron()) {
-      return { lastInsertRowId: 0, changes: 0 };
-    }
+  // 3. تنفيذ عمليات الإضافة والتعديل والحذف
+  run: async (queryStr, params = []) => {
+    if (!checkElectron()) return { lastInsertRowId: 0, changes: 0 };
     try {
-      return await window.api.dbQuery(query, params);
+      return await dbQueryBridge(queryStr, params);
     } catch (e) {
       console.error("خطأ في run:", e);
       return { lastInsertRowId: 0, changes: 0 };
     }
   },
 
-  // قراءة واسترجاع البيانات (SELECT)
-  getAll: async (query, params = []) => {
-    if (!checkElectron()) {
-      return [];
-    }
+  // 4. قراءة البيانات
+  getAll: async (queryStr, params = []) => {
+    if (!checkElectron()) return [];
     try {
-      const result = await window.api.dbQuery(query, params);
+      const result = await dbQueryBridge(queryStr, params);
       return Array.isArray(result) ? result : [];
     } catch (e) {
       console.error("خطأ في getAll:", e);
@@ -47,13 +61,13 @@ const db = {
     }
   },
 
-  // أسماء التوافق السابقة (مع تحويلها لـ async لضمان عدم تجميد واجهة الديسكتوب)
-  execSync: async (query) => await db.exec(query),
-  runSync: async (query, params = []) => await db.run(query, params),
-  getAllSync: async (query, params = []) => await db.getAll(query, params)
+  // التوافقية السابقة
+  execSync: async (queryStr) => await db.exec(queryStr),
+  runSync: async (queryStr, params = []) => await db.run(queryStr, params),
+  getAllSync: async (queryStr, params = []) => await db.getAll(queryStr, params)
 };
 
-// دالة تهيئة الجداول الخمسة عند تشغيل التطبيق
+// تهيئة الجداول الخمسة عند تشغيل التطبيق
 export const initDB = async () => {
   if (!checkElectron()) {
     console.log("تم تخطي تهيئة قاعدة البيانات لأن التطبيق يعمل خارج بيئة Electron.");
@@ -61,7 +75,6 @@ export const initDB = async () => {
   }
 
   try {
-    // 1. جدول السجل اليومي (المبيعات، المشتريات، الصافي)
     await db.exec(`
       CREATE TABLE IF NOT EXISTS daily_transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +85,6 @@ export const initDB = async () => {
       );
     `);
 
-    // 2. جدول المخزون والتنبيهات (لمراقبة الصلاحية والنواقص)
     await db.exec(`
       CREATE TABLE IF NOT EXISTS inventory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +95,6 @@ export const initDB = async () => {
       );
     `);
 
-    // 3. جدول النقدية (الصندوق والبنك)
     await db.exec(`
       CREATE TABLE IF NOT EXISTS treasury (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,7 +106,6 @@ export const initDB = async () => {
       );
     `);
 
-    // 4. جدول العملاء والموردين (الديون والاستحقاقات)
     await db.exec(`
       CREATE TABLE IF NOT EXISTS contacts_ledger (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,7 +117,6 @@ export const initDB = async () => {
       );
     `);
 
-    // 5. جدول المصروفات التشغيلية
     await db.exec(`
       CREATE TABLE IF NOT EXISTS expenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,4 +134,5 @@ export const initDB = async () => {
   }
 };
 
+export const query = db.query;
 export default db;
