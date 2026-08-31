@@ -22,7 +22,6 @@ const Luxury3DIcon = ({ activeTab }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // حركة طفو حركية 3D مستمرة
     Animated.loop(
       Animated.sequence([
         Animated.timing(floatAnim, {
@@ -40,7 +39,6 @@ const Luxury3DIcon = ({ activeTab }) => {
       ])
     ).start();
 
-    // حركة نَبض فخمة للبريق الداخلي
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -83,7 +81,6 @@ const Luxury3DIcon = ({ activeTab }) => {
 
 export default function ContactsScreen() {
   const [activeTab, setActiveTab] = useState('customer');
-  // الشهر المحدد بصيغة YYYY-MM
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   
   const [name, setName] = useState('');
@@ -91,6 +88,8 @@ export default function ContactsScreen() {
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [contactsList, setContactsList] = useState([]);
   const [totalMonthAmount, setTotalMonthAmount] = useState(0);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
     initTableAndFetch();
@@ -115,16 +114,14 @@ export default function ContactsScreen() {
 
   const fetchContacts = async () => {
     try {
-      // 1. جلب سجلات الشهر المحدد ونوع الحساب (عميل/مورد)
       const results = await db.query(
         `SELECT * FROM contacts_ledger 
          WHERE type = ? AND strftime('%Y-%m', date) = ? 
-         ORDER BY id DESC;`,
+         ORDER BY date ASC, id DESC;`,
         [activeTab, selectedMonth]
       );
       setContactsList(results || []);
 
-      // 2. حساب المجموع الشهري الإجمالي
       const summary = await db.query(
         `SELECT COALESCE(SUM(amount), 0) as total 
          FROM contacts_ledger 
@@ -165,23 +162,64 @@ export default function ContactsScreen() {
     }
   };
 
-  const renderContactItem = ({ item }) => (
-    <View style={[styles.card, activeTab === 'customer' ? styles.borderBlue : styles.borderPurple]}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.contactName}>{item.name}</Text>
-        <Text style={styles.dueDateText}>🗓️ {item.date}</Text>
+  // 🔔 فحص حالة تاريخ الاستحقاق وإرجاع التفاصيل والتنسيق المناسب
+  const getDueDateStatus = (dateStr) => {
+    if (dateStr < todayStr) {
+      return { label: 'متأخر عن السداد', color: '#EF4444', bgColor: '#FEE2E2', icon: '⚠️', isOverdue: true };
+    } else if (dateStr === todayStr) {
+      return { label: 'مستحق اليوم', color: '#F59E0B', bgColor: '#FEF3C7', icon: '🔔', isOverdue: false };
+    } else {
+      return { label: 'قادم', color: '#10B981', bgColor: '#D1FAE5', icon: '🗓️', isOverdue: false };
+    }
+  };
+
+  // حساب عدد وحجم المبالغ المتأخرة لتنبيه الشاشة الرئيسي
+  const overdueItems = contactsList.filter(item => item.date < todayStr);
+  const overdueTotal = overdueItems.reduce((acc, item) => acc + (item.amount || 0), 0);
+
+  const renderContactItem = ({ item }) => {
+    const status = getDueDateStatus(item.date);
+
+    return (
+      <View 
+        style={[
+          styles.card, 
+          status.isOverdue 
+            ? styles.borderRed 
+            : activeTab === 'customer' ? styles.borderBlue : styles.borderPurple
+        ]}
+      >
+        <View style={styles.cardHeader}>
+          <Text style={styles.contactName}>{item.name}</Text>
+          
+          {/* وسام التنبيه بحالة السداد */}
+          <View style={[styles.statusBadge, { backgroundColor: status.bgColor }]}>
+            <Text style={[styles.statusText, { color: status.color }]}>
+              {status.icon} {status.label}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.cardDetails}>
+          <View>
+            <Text style={styles.detailText}>
+              {activeTab === 'customer' ? 'المبلغ المطلوب منه:' : 'المبلغ المستحق له:'}
+            </Text>
+            <Text style={[styles.amountText, activeTab === 'customer' ? styles.textBlue : styles.textPurple]}>
+              {(item.amount || 0).toLocaleString()} ريال
+            </Text>
+          </View>
+
+          <View style={styles.dateContainer}>
+            <Text style={styles.dateLabel}>تاريخ الاستحقاق:</Text>
+            <Text style={[styles.dueDateText, status.isOverdue && styles.textRed]}>
+              {item.date}
+            </Text>
+          </View>
+        </View>
       </View>
-      
-      <View style={styles.cardDetails}>
-        <Text style={styles.detailText}>
-          {activeTab === 'customer' ? 'المبلغ المطلوب منه:' : 'المبلغ المستحق له:'}
-        </Text>
-        <Text style={[styles.amountText, activeTab === 'customer' ? styles.textBlue : styles.textPurple]}>
-          {(item.amount || 0).toLocaleString()} ريال
-        </Text>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <KeyboardAvoidingView 
@@ -194,7 +232,7 @@ export default function ContactsScreen() {
         <Text style={styles.headerTitle}>إدارة الديون والحسابات</Text>
       </View>
 
-      {/* شريط اختيار وتنقل الشهر الفاخر */}
+      {/* شريط اختيار وتنقل الشهر */}
       <View style={styles.monthSelectorBar}>
         <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
           <Text style={styles.monthNavText}>▶</Text>
@@ -226,6 +264,21 @@ export default function ContactsScreen() {
           <Text style={[styles.tabText, activeTab === 'supplier' && styles.activeTabText]}>الموردين (مستحقات)</Text>
         </TouchableOpacity>
       </View>
+
+      {/* ⚠️ بطاقة تنبيه طارئة للعمليات المتأخرة عن السداد */}
+      {overdueItems.length > 0 && (
+        <View style={styles.alertBanner}>
+          <Text style={styles.alertIcon}>⚠️</Text>
+          <View style={styles.alertTextWrapper}>
+            <Text style={styles.alertTitle}>
+              تنبيه: يوجد {overdueItems.length} {activeTab === 'customer' ? 'ديون متأخرة للعملاء' : 'مستحقات متأخرة للموردين'}!
+            </Text>
+            <Text style={styles.alertSubtitle}>
+              إجمالي المتأخرات: {overdueTotal.toLocaleString()} ريال
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* بطاقة الإحصائية الشهرية التراكمية */}
       <View style={styles.summaryCard}>
@@ -373,7 +426,7 @@ const styles = StyleSheet.create({
   monthLabelText: { fontSize: 12, color: '#64748B', fontWeight: '600' },
   monthValueText: { fontSize: 16, color: '#0F172A', fontWeight: 'bold' },
 
-  // الأزرار والتنقّلات
+  // التنقّلات
   tabContainer: {
     flexDirection: 'row-reverse',
     backgroundColor: '#FFFFFF',
@@ -394,6 +447,23 @@ const styles = StyleSheet.create({
   activeTabPurple: { backgroundColor: '#6366F1', borderColor: '#4F46E5' },
   tabText: { fontSize: 14, fontWeight: '700', color: '#64748B' },
   activeTabText: { color: '#FFFFFF' },
+
+  // شريط التنبيه الطارئ للديون المتأخرة
+  alertBanner: {
+    flexDirection: 'row-reverse',
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+    borderWidth: 1,
+    borderRadius: 12,
+    marginHorizontal: 15,
+    marginBottom: 10,
+    padding: 12,
+    alignItems: 'center',
+  },
+  alertIcon: { fontSize: 22, marginLeft: 10 },
+  alertTextWrapper: { flex: 1 },
+  alertTitle: { color: '#991B1B', fontWeight: 'bold', fontSize: 13, textAlign: 'right' },
+  alertSubtitle: { color: '#B91C1C', fontSize: 12, marginTop: 2, textAlign: 'right' },
 
   // بطاقة الملخص
   summaryCard: {
@@ -463,7 +533,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
-    borderRightWidth: 5,
+    borderRightWidth: 6,
     shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -472,22 +542,34 @@ const styles = StyleSheet.create({
   },
   borderBlue: { borderRightColor: '#3B82F6' },
   borderPurple: { borderRightColor: '#6366F1' },
+  borderRed: { borderRightColor: '#EF4444' },
   cardHeader: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
   },
   contactName: { fontSize: 16, fontWeight: 'bold', color: '#1E293B' },
-  dueDateText: { fontSize: 13, color: '#64748B', fontWeight: '600' },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  statusText: { fontSize: 11, fontWeight: 'bold' },
   cardDetails: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
+    alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
     paddingTop: 8,
   },
-  detailText: { fontSize: 14, color: '#64748B' },
-  amountText: { fontSize: 16, fontWeight: 'bold' },
+  detailText: { fontSize: 13, color: '#64748B' },
+  amountText: { fontSize: 15, fontWeight: 'bold', marginTop: 2 },
+  dateContainer: { alignItems: 'flex-start' },
+  dateLabel: { fontSize: 11, color: '#94A3B8' },
+  dueDateText: { fontSize: 13, color: '#64748B', fontWeight: '700', marginTop: 2 },
+  textRed: { color: '#EF4444' },
   textBlue: { color: '#2563EB' },
   textPurple: { color: '#4F46E5' },
   emptyText: { textAlign: 'center', color: '#94A3B8', marginTop: 25, fontSize: 14 },
