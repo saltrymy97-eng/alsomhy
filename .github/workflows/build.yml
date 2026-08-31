@@ -23,7 +23,6 @@ jobs:
         run: npm install react-native-web react-dom
 
       - name: Bridge React Native to Web
-        # هذا السطر ينشئ جسراً تلقائياً لكي تفهم أداة الويب مكونات الهاتف دون تعديل أكوادك
         run: |
           New-Item -ItemType Directory -Force -Path "node_modules/react-native"
           Set-Content -Path "node_modules/react-native/index.js" -Value "module.exports = require('react-native-web');"
