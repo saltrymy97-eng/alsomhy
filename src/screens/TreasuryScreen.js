@@ -13,7 +13,6 @@ import {
   StatusBar,
 } from 'react-native';
 import db from '../db';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function TreasuryScreen() {
   const [cashBalance, setCashBalance] = useState(0);
@@ -142,13 +141,13 @@ export default function TreasuryScreen() {
   const getTransactionBadge = (type) => {
     switch (type) {
       case 'deposit':
-        return { label: 'إيداع صندوق', color: '#10B981', icon: 'arrow-down-bold-circle' };
+        return { label: 'إيداع صندوق', color: '#10B981', emoji: '📥' };
       case 'withdraw':
-        return { label: 'سحب صندوق', color: '#EF4444', icon: 'arrow-up-bold-circle' };
+        return { label: 'سحب صندوق', color: '#EF4444', emoji: '📤' };
       case 'transfer':
-        return { label: 'تحويل للبنك', color: '#3B82F6', icon: 'swap-horizontal-circle' };
+        return { label: 'تحويل للبنك', color: '#3B82F6', emoji: '🔀' };
       default:
-        return { label: 'حركة نقدية', color: '#64748B', icon: 'circle' };
+        return { label: 'حركة نقدية', color: '#64748B', emoji: '📌' };
     }
   };
 
@@ -163,7 +162,7 @@ export default function TreasuryScreen() {
     return (
       <View style={styles.historyCard}>
         <View style={styles.historyRight}>
-          <MaterialCommunityIcons name={badge.icon} size={32} color={badge.color} />
+          <Text style={styles.historyEmoji}>{badge.emoji}</Text>
           <View style={styles.historyDetails}>
             <Text style={styles.historyDescription}>{item.description}</Text>
             <Text style={styles.historyDate}>{formattedDate}</Text>
@@ -195,7 +194,7 @@ export default function TreasuryScreen() {
           <View style={styles.balancesContainer}>
             <View style={[styles.balanceCard, styles.cashCard]}>
               <View style={styles.balanceHeader}>
-                <MaterialCommunityIcons name="cash-register" size={24} color="#059669" />
+                <Text style={styles.balanceIcon}>💵</Text>
                 <Text style={styles.balanceTitle}>رصيد الصندوق</Text>
               </View>
               <Text style={styles.balanceValue}>{(cashBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
@@ -203,7 +202,7 @@ export default function TreasuryScreen() {
 
             <View style={[styles.balanceCard, styles.bankCard]}>
               <View style={styles.balanceHeader}>
-                <MaterialCommunityIcons name="bank" size={24} color="#2563EB" />
+                <Text style={styles.balanceIcon}>🏦</Text>
                 <Text style={styles.balanceTitle}>رصيد البنك</Text>
               </View>
               <Text style={styles.balanceValue}>{(bankBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
@@ -259,8 +258,7 @@ export default function TreasuryScreen() {
 
             {/* زر الحفظ */}
             <TouchableOpacity style={styles.saveButton} onPress={handleSaveTransaction} activeOpacity={0.8}>
-              <MaterialCommunityIcons name="check-circle-outline" size={20} color="#FFFFFF" />
-              <Text style={styles.saveButtonText}>حفظ العملية</Text>
+              <Text style={styles.saveButtonText}>✅ حفظ العملية</Text>
             </TouchableOpacity>
           </View>
 
@@ -275,7 +273,7 @@ export default function TreasuryScreen() {
               contentContainerStyle={{ paddingBottom: 20 }}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
-                  <MaterialCommunityIcons name="receipt-text-clock-outline" size={48} color="#CBD5E1" />
+                  <Text style={styles.emptyEmoji}>📭</Text>
                   <Text style={styles.emptyText}>لا توجد حركات نقدية مسجلة حتى الآن</Text>
                 </View>
               }
@@ -344,6 +342,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginBottom: 8,
+  },
+  balanceIcon: {
+    fontSize: 20,
   },
   balanceTitle: {
     fontSize: 13,
@@ -434,7 +435,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderRadius: 12,
-    gap: 8,
   },
   saveButtonText: {
     color: '#FFFFFF',
@@ -462,6 +462,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     flex: 1,
+  },
+  historyEmoji: {
+    fontSize: 24,
   },
   historyDetails: {
     alignItems: 'flex-start',
@@ -495,6 +498,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 30,
     gap: 8,
+  },
+  emptyEmoji: {
+    fontSize: 32,
   },
   emptyText: {
     fontSize: 13,
