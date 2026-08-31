@@ -19,12 +19,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # تم إضافة المتغيرات البيئية هنا لتوليد خرائط المصدر وتجنب توقف البناء بسبب التحذيرات
       - name: Export Expo Web
         env:
           CI: false
           GENERATE_SOURCEMAP: true
-        run: npx expo export --platform web
+        run: npx expo export --platform web --clear
 
       - name: Build with Electron Builder
         run: npx electron-builder --win --publish never
