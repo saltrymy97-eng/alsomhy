@@ -10,9 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
-import * as SQLite from 'expo-sqlite';
-
-const db = SQLite.openDatabaseSync('accounting.db');
+import db from '../db';
 
 export default function InventoryScreen() {
   const [productName, setProductName] = useState('');
@@ -25,9 +23,9 @@ export default function InventoryScreen() {
     initTableAndFetch();
   }, []);
 
-  const initTableAndFetch = () => {
+  const initTableAndFetch = async () => {
     try {
-      db.execSync(`
+      await db.query(`
         CREATE TABLE IF NOT EXISTS inventory (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
@@ -36,24 +34,24 @@ export default function InventoryScreen() {
           minAlert REAL NOT NULL
         );
       `);
-      fetchInventory();
+      await fetchInventory();
     } catch (error) {
       console.error('خطأ في تهيئة جدول المخزون:', error);
     }
   };
 
-  const fetchInventory = () => {
+  const fetchInventory = async () => {
     try {
-      const results = db.getAllSync(
+      const results = await db.query(
         'SELECT * FROM inventory ORDER BY id DESC;'
       );
-      setInventoryList(results);
+      setInventoryList(results || []);
     } catch (error) {
       console.error('خطأ في جلب بيانات المخزون:', error);
     }
   };
 
-  const handleSaveProduct = () => {
+  const handleSaveProduct = async () => {
     if (!productName || !quantity || !expiryDate) {
       Alert.alert('تنبيه', 'يرجى إدخال اسم المنتج، الكمية، وتاريخ الصلاحية.');
       return;
@@ -63,7 +61,7 @@ export default function InventoryScreen() {
       const numQty = parseFloat(quantity) || 0;
       const numMinAlert = parseFloat(minAlert) || 0;
 
-      db.runSync(
+      await db.query(
         'INSERT INTO inventory (name, qty, expiry, minAlert) VALUES (?, ?, ?, ?);',
         [productName, numQty, expiryDate, numMinAlert]
       );
@@ -72,7 +70,7 @@ export default function InventoryScreen() {
       setQuantity('');
       setExpiryDate('');
       setMinAlert('');
-      fetchInventory();
+      await fetchInventory();
     } catch (error) {
       console.error('خطأ في حفظ المنتج:', error);
       Alert.alert('خطأ', 'فشل حفظ المنتج في قاعدة البيانات.');
@@ -90,8 +88,12 @@ export default function InventoryScreen() {
         </View>
         
         <View style={styles.cardDetails}>
-          <Text style={styles.detailText}>الكمية الحالية: <Text style={styles.highlight}>{item.qty}</Text></Text>
-          <Text style={styles.detailText}>حد التنبيه: <Text style={styles.highlightAlert}>{item.minAlert}</Text></Text>
+          <Text style={styles.detailText}>
+            الكمية الحالية: <Text style={styles.highlight}>{(item.qty || 0).toLocaleString()}</Text>
+          </Text>
+          <Text style={styles.detailText}>
+            حد التنبيه: <Text style={styles.highlightAlert}>{(item.minAlert || 0).toLocaleString()}</Text>
+          </Text>
         </View>
       </View>
     );
