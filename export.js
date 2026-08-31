@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
  */
 export const exportToExcel = (data, fileName = 'Report') => {
   try {
-    if (!data || data.length === 0) {
+    if (!Array.isArray(data) || data.length === 0) {
       console.warn('لا توجد بيانات للتصدير');
       return false;
     }
@@ -14,7 +14,6 @@ export const exportToExcel = (data, fileName = 'Report') => {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'البيانات');
 
-    // استخدام دالة المكتبة المدمجة للويب لتنزيل الملف فوراً
     XLSX.writeFile(workbook, `${fileName}.xlsx`);
     return true;
   } catch (error) {
@@ -24,16 +23,21 @@ export const exportToExcel = (data, fileName = 'Report') => {
 };
 
 /**
- * 2. تصدير البيانات إلى صفحة HTML وعرضها للطباعة الفورية
+ * 2. تصدير البيانات إلى صفحة HTML وعرضها للطباعة الفورية (مع حماية آمنة للمصفوفات)
  */
 export const exportToHTML = (reportTitle, data, fileName = 'Report') => {
   try {
-    if (!data || data.length === 0) {
-      console.warn('لا توجد بيانات للتقرير');
+    // التأكد التام أن البيانات مصفوفة وليست فارغة وأن العنصر الأول كائن صالح
+    if (!Array.isArray(data) || data.length === 0 || !data[0]) {
+      console.warn('لا توجد بيانات للتقرير أو البيانات غير صالحة');
       return false;
     }
 
     const headers = Object.keys(data[0]);
+    if (!Array.isArray(headers) || headers.length === 0) {
+      console.warn('لا توجد حقول (أعمدة) للعرض');
+      return false;
+    }
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -58,13 +62,13 @@ export const exportToHTML = (reportTitle, data, fileName = 'Report') => {
           <table>
             <thead>
               <tr>
-                ${headers.map(h => `<th>${h}</th>`).join('')}
+                ${headers.map(h => `<th>${h}˼th>`).join('')}
               </tr>
             </thead>
             <tbody>
               ${data.map(row => `
                 <tr>
-                  ${headers.map(key => `<td>${row[key] !== undefined ? row[key] : ''}</td>`).join('')}
+                  ${headers.map(key => `<td>${row && row[key] !== undefined ? row[key] : ''}</td>`).join('')}
                 </tr>
               `).join('')}
             </tbody>
@@ -80,7 +84,6 @@ export const exportToHTML = (reportTitle, data, fileName = 'Report') => {
       </html>
     `;
 
-    // فتح نافذة منبثقة مستقلة لطباعة أو حفظ الـ HTML كـ PDF
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const printWindow = window.open(url, '_blank');
