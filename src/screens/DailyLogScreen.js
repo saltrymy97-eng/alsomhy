@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
   },
   logRow: {
     flexDirection: 'row-reverse',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     marginBottom: 5,
   },
   logFooter: {
