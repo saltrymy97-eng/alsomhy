@@ -1,6 +1,7 @@
 {
   "name": "alsomhy-accounting",
   "version": "1.0.0",
+  "homepage": ".",
   "main": "main.js",
   "scripts": {
     "start": "react-scripts start",
