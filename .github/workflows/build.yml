@@ -34,9 +34,6 @@ jobs:
           GENERATE_SOURCEMAP: false
         run: npm run build
 
-      - name: Rename build folder to dist
-        run: Rename-Item -Path "build" -NewName "dist"
-
       - name: Build with Electron Builder
         run: npx electron-builder --win --publish never
 
