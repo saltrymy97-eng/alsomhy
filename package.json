@@ -23,14 +23,20 @@
   "build": {
     "appId": "com.alsomhy.accounting",
     "productName": "Alsomhy Accounting System",
+    "extends": null,
     "directories": {
       "output": "release"
     },
     "files": [
       "build/**/*",
       "main.js",
+      "preload.js",
+      "export.js",
       "node_modules/better-sqlite3/**/*"
     ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
     "win": {
       "target": [
         "nsis"
@@ -39,8 +45,6 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "public/favicon.ico",
-      "uninstallerIcon": "public/favicon.ico",
       "shortcutName": "Alsomhy Accounting"
     },
     "asarUnpack": [
