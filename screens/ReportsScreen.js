@@ -125,20 +125,24 @@ export default function ReportsScreen() {
 
   // 2. تصدير البيانات إلى صفحة HTML وعرضها للطباعة
   const handleExportToHTML = () => {
-    // التحقق الآمن من أن البيانات مصفوفة فعلية وليست فارغة
+    // 1. التحقق الآمن من أن البيانات مصفوفة فعلية وليست فارغة
     if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
       Alert.alert('تنبيه', 'لا توجد بيانات كافية لإنشاء التقرير.');
       return;
     }
 
     try {
-      // تأمين القيم المالية لتفادي أخطاء NaN أو undefined
+      // 2. تأمين القيم المالية لتفادي أخطاء NaN أو undefined
       const safeTotalSales = Number(financialData?.totalSales) || 0;
       const safeTotalExpensesAndPurchases = (Number(financialData?.totalPurchases) || 0) + (Number(financialData?.totalExpenses) || 0);
       const safeNetIncome = Number(financialData?.netIncome) || 0;
 
-      // بناء صفوف الجدول بشكل منفصل وآمن لتجنب خطأ الانهيار t.join
-      const tableRows = reportDetails.map((item) => {
+      // 3. بناء صفوف الجدول باستخدام حلقة for تقليدية (للاستغناء عن map و join تماماً)
+      let tableRows = '';
+      for (let i = 0; i < reportDetails.length; i++) {
+        const item = reportDetails[i];
+        
+        // تأمين القيم لكل عنصر في المصفوفة
         const type = item?.البند || 'غير محدد';
         const amount = Number(item?.المبلغ) || 0;
         const desc = item?.البيان || '---';
@@ -146,7 +150,8 @@ export default function ReportsScreen() {
         
         const amountColor = type === 'مبيعات' ? '#10B981' : '#EF4444';
 
-        return `
+        // إضافة الصف إلى المتغير النصي
+        tableRows += `
           <tr>
             <td><b>${type}</b></td>
             <td style="font-weight: bold; color: ${amountColor};">${amount.toLocaleString()}</td>
@@ -154,9 +159,9 @@ export default function ReportsScreen() {
             <td>${date}</td>
           </tr>
         `;
-      }).join(''); // الدمج يتم هنا بأمان
+      }
 
-      // دمج الصفوف داخل قالب الـ HTML
+      // 4. دمج الصفوف داخل قالب الـ HTML
       const htmlContent = `
         <!DOCTYPE html>
         <html dir="rtl" lang="ar">
@@ -249,7 +254,7 @@ export default function ReportsScreen() {
     );
   }
 
-  // استخدام خصائص آمنة (Optional Chaining) لضمان عدم حدوث Crash أثناء التصيير
+  // استخدام خصائص آمنة لضمان عدم حدوث Crash أثناء التصيير
   const safeRenderTotalSales = Number(financialData?.totalSales) || 0;
   const safeRenderTotalExpenses = (Number(financialData?.totalPurchases) || 0) + (Number(financialData?.totalExpenses) || 0);
   const safeRenderNetIncome = Number(financialData?.netIncome) || 0;
