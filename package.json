@@ -19,5 +19,32 @@
     "electron-builder": "^24.13.3",
     "react-scripts": "^5.0.1"
   },
-  "private": true
+  "private": true,
+  "build": {
+    "appId": "com.alsomhy.accounting",
+    "productName": "Alsomhy Accounting System",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "build/**/*",
+      "main.js",
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "public/favicon.ico",
+      "uninstallerIcon": "public/favicon.ico",
+      "shortcutName": "Alsomhy Accounting"
+    },
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ]
+  }
 }
