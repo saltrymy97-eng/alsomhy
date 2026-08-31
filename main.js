@@ -68,13 +68,14 @@ ipcMain.handle('db-init', async () => {
 // 2. إعداد الخادم المحلي لتشغيل الويب
 // ==========================================
 function startServer() {
-  const distDir = path.join(safeDirname, 'dist');
+  // توجيه المسار إلى مجلد build الخاص بـ React
+  const buildDir = path.join(safeDirname, 'build');
   
   server = http.createServer((req, res) => {
     const requestPath = req.url === '/' ? '/index.html' : req.url.split('?')[0];
-    const filePath = path.normalize(path.join(distDir, requestPath));
+    const filePath = path.normalize(path.join(buildDir, requestPath));
    
-    if (!filePath.startsWith(distDir)) {
+    if (!filePath.startsWith(buildDir)) {
       res.writeHead(403);
       res.end('Forbidden');
       return;
@@ -82,7 +83,7 @@ function startServer() {
 
     fs.readFile(filePath, (err, data) => {
       if (err) {
-        fs.readFile(path.join(distDir, 'index.html'), (err2, indexData) => {
+        fs.readFile(path.join(buildDir, 'index.html'), (err2, indexData) => {
           if (err2) {
             res.writeHead(404);
             res.end('Not found');
