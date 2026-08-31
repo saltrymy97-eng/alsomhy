@@ -1,8 +1,5 @@
 import * as XLSX from 'xlsx';
 
-/**
- * 1. تصدير البيانات إلى ملف Excel (.xlsx) عبر المتصفح مباشرة
- */
 export const exportToExcel = (data, fileName = 'Report') => {
   try {
     if (!Array.isArray(data) || data.length === 0) {
@@ -22,12 +19,8 @@ export const exportToExcel = (data, fileName = 'Report') => {
   }
 };
 
-/**
- * 2. تصدير البيانات إلى صفحة HTML وعرضها للطباعة الفورية (مع حماية آمنة للمصفوفات)
- */
 export const exportToHTML = (reportTitle, data, fileName = 'Report') => {
   try {
-    // التأكد التام أن البيانات مصفوفة وليست فارغة وأن العنصر الأول كائن صالح
     if (!Array.isArray(data) || data.length === 0 || !data[0]) {
       console.warn('لا توجد بيانات للتقرير أو البيانات غير صالحة');
       return false;
@@ -62,7 +55,7 @@ export const exportToHTML = (reportTitle, data, fileName = 'Report') => {
           <table>
             <thead>
               <tr>
-                ${headers.map(h => `<th>${h}˼th>`).join('')}
+                ${headers.map(h => `<th>${h}</th>`).join('')}
               </tr>
             </thead>
             <tbody>
