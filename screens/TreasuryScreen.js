@@ -12,11 +12,8 @@ import {
   SafeAreaView,
   StatusBar,
 } from 'react-native';
-import * as SQLite from 'expo-sqlite';
+import db from '../db';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-
-// فتح أو إنشاء قاعدة البيانات
-const db = SQLite.openDatabaseSync('accounting.db');
 
 export default function TreasuryScreen() {
   const [cashBalance, setCashBalance] = useState(0);
@@ -27,19 +24,24 @@ export default function TreasuryScreen() {
   const [transactions, setTransactions] = useState([]);
 
   useEffect(() => {
-    initDB();
-    fetchData();
+    const setup = async () => {
+      await initDB();
+      await fetchData();
+    };
+    setup();
   }, []);
 
-  // تهيئة الجداول في قاعدة البيانات
-  const initDB = () => {
+  // تهيئة الجداول في قاعدة البيانات بشكل لامتزامن
+  const initDB = async () => {
     try {
-      db.execSync(`
+      await db.query(`
         CREATE TABLE IF NOT EXISTS treasury_balances (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           cash_balance REAL DEFAULT 0,
           bank_balance REAL DEFAULT 0
         );
+      `);
+      await db.query(`
         CREATE TABLE IF NOT EXISTS treasury_transactions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           type TEXT NOT NULL,
@@ -50,9 +52,9 @@ export default function TreasuryScreen() {
       `);
 
       // إضافة السجل الأولي للأرصدة إذا لم يكن موجوداً
-      const result = db.getAllSync('SELECT * FROM treasury_balances;');
-      if (result.length === 0) {
-        db.runSync('INSERT INTO treasury_balances (cash_balance, bank_balance) VALUES (0, 0);');
+      const result = await db.query('SELECT * FROM treasury_balances;');
+      if (!result || result.length === 0) {
+        await db.query('INSERT INTO treasury_balances (cash_balance, bank_balance) VALUES (0, 0);');
       }
     } catch (error) {
       console.error('خطأ في تهيئة قاعدة البيانات:', error);
@@ -60,25 +62,25 @@ export default function TreasuryScreen() {
   };
 
   // جلب البيانات والأرصدة من قاعدة البيانات
-  const fetchData = () => {
+  const fetchData = async () => {
     try {
-      const balanceRes = db.getAllSync('SELECT * FROM treasury_balances LIMIT 1;');
-      if (balanceRes.length > 0) {
-        setCashBalance(balanceRes[0].cash_balance);
-        setBankBalance(balanceRes[0].bank_balance);
+      const balanceRes = await db.query('SELECT * FROM treasury_balances LIMIT 1;');
+      if (balanceRes && balanceRes.length > 0) {
+        setCashBalance(balanceRes[0].cash_balance || 0);
+        setBankBalance(balanceRes[0].bank_balance || 0);
       }
 
-      const txRes = db.getAllSync(
+      const txRes = await db.query(
         'SELECT * FROM treasury_transactions ORDER BY id DESC;'
       );
-      setTransactions(txRes);
+      setTransactions(txRes || []);
     } catch (error) {
       console.error('خطأ في جلب البيانات:', error);
     }
   };
 
   // معالجة حفظ الحركة النقدية
-  const handleSaveTransaction = () => {
+  const handleSaveTransaction = async () => {
     const numAmount = parseFloat(amount);
 
     if (isNaN(numAmount) || numAmount <= 0) {
@@ -113,12 +115,12 @@ export default function TreasuryScreen() {
 
     try {
       // تحديث الأرصدة وإدراج الحركة
-      db.runSync(
+      await db.query(
         'UPDATE treasury_balances SET cash_balance = ?, bank_balance = ? WHERE id = 1;',
         [newCash, newBank]
       );
 
-      db.runSync(
+      await db.query(
         'INSERT INTO treasury_transactions (type, amount, description) VALUES (?, ?, ?);',
         [transactionType, numAmount, description.trim()]
       );
@@ -127,7 +129,7 @@ export default function TreasuryScreen() {
       setAmount('');
       setDescription('');
       Keyboard.dismiss();
-      fetchData();
+      await fetchData();
 
       Alert.alert('نجاح', 'تم تسجيل الحركة النقدية بنجاح.');
     } catch (error) {
@@ -169,7 +171,7 @@ export default function TreasuryScreen() {
         </View>
         <View style={styles.historyLeft}>
           <Text style={[styles.historyAmount, { color: badge.color }]}>
-            {item.amount.toLocaleString()} ر.ي
+            {(item.amount || 0).toLocaleString()} ر.ي
           </Text>
           <Text style={styles.historyTypeLabel}>{badge.label}</Text>
         </View>
@@ -196,7 +198,7 @@ export default function TreasuryScreen() {
                 <MaterialCommunityIcons name="cash-register" size={24} color="#059669" />
                 <Text style={styles.balanceTitle}>رصيد الصندوق</Text>
               </View>
-              <Text style={styles.balanceValue}>{cashBalance.toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
+              <Text style={styles.balanceValue}>{(cashBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
             </View>
 
             <View style={[styles.balanceCard, styles.bankCard]}>
@@ -204,7 +206,7 @@ export default function TreasuryScreen() {
                 <MaterialCommunityIcons name="bank" size={24} color="#2563EB" />
                 <Text style={styles.balanceTitle}>رصيد البنك</Text>
               </View>
-              <Text style={styles.balanceValue}>{bankBalance.toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
+              <Text style={styles.balanceValue}>{(bankBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
             </View>
           </View>
 
