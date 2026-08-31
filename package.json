@@ -23,7 +23,23 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
-    "electron": "^30.0.0"
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.alsomhy.accounting",
+    "productName": "AlsomhyAccounting",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "dist/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    }
   },
   "private": true
 }
