@@ -10,9 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
-import * as SQLite from 'expo-sqlite';
-
-const db = SQLite.openDatabaseSync('accounting.db');
+import db from '../db';
 
 export default function DailyLogScreen() {
   const [purchaseAmount, setPurchaseAmount] = useState('');
@@ -23,9 +21,9 @@ export default function DailyLogScreen() {
     initTableAndFetch();
   }, []);
 
-  const initTableAndFetch = () => {
+  const initTableAndFetch = async () => {
     try {
-      db.execSync(`
+      await db.query(`
         CREATE TABLE IF NOT EXISTS daily_transactions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           date TEXT DEFAULT (date('now')),
@@ -35,24 +33,24 @@ export default function DailyLogScreen() {
           net_profit REAL
         );
       `);
-      fetchTodayLogs();
+      await fetchTodayLogs();
     } catch (error) {
       console.error('خطأ في تهيئة جدول الحركات اليومية:', error);
     }
   };
 
-  const fetchTodayLogs = () => {
+  const fetchTodayLogs = async () => {
     try {
-      const results = db.getAllSync(
+      const results = await db.query(
         `SELECT * FROM daily_transactions WHERE date = date('now') ORDER BY id DESC;`
       );
-      setTodayLogs(results);
+      setTodayLogs(results || []);
     } catch (error) {
       console.error('خطأ في جلب حركات اليوم:', error);
     }
   };
 
-  const handleSaveTransaction = () => {
+  const handleSaveTransaction = async () => {
     if (!purchaseAmount && !saleAmount) {
       Alert.alert('تنبيه', 'يرجى إدخال مبلغ الشراء أو مبلغ البيع على الأقل');
       return;
@@ -64,14 +62,14 @@ export default function DailyLogScreen() {
     const currentTime = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
 
     try {
-      db.runSync(
+      await db.query(
         'INSERT INTO daily_transactions (date, time, total_purchases, total_sales, net_profit) VALUES (date("now"), ?, ?, ?, ?);',
         [currentTime, pAmount, sAmount, netProfit]
       );
 
       setPurchaseAmount('');
       setSaleAmount('');
-      fetchTodayLogs();
+      await fetchTodayLogs();
       Alert.alert('نجاح', 'تم تسجيل العملية بنجاح');
     } catch (error) {
       console.error('خطأ في حفظ العملية:', error);
@@ -82,12 +80,14 @@ export default function DailyLogScreen() {
   const renderLogItem = ({ item }) => (
     <View style={styles.logCard}>
       <View style={styles.logRow}>
-        <Text style={styles.logLabel}>المبيعات: <Text style={styles.textBlue}>{item.total_sales}</Text></Text>
-        <Text style={styles.logLabel}>المشتريات: <Text style={styles.textRed}>{item.total_purchases}</Text></Text>
+        <Text style={styles.logLabel}>المبيعات: <Text style={styles.textBlue}>{(item.total_sales || 0).toLocaleString()}</Text></Text>
+        <Text style={styles.logLabel}>المشتريات: <Text style={styles.textRed}>{(item.total_purchases || 0).toLocaleString()}</Text></Text>
       </View>
       <View style={[styles.logRow, styles.logFooter]}>
         <Text style={styles.logTime}>{item.time}</Text>
-        <Text style={styles.logNet}>الصافي: <Text style={item.net_profit >= 0 ? styles.textGreen : styles.textRed}>{item.net_profit}</Text></Text>
+        <Text style={styles.logNet}>
+          الصافي: <Text style={(item.net_profit || 0) >= 0 ? styles.textGreen : styles.textRed}>{(item.net_profit || 0).toLocaleString()}</Text>
+        </Text>
       </View>
     </View>
   );
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
   },
   logRow: {
     flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
+    justify.content: 'space-between',
     marginBottom: 5,
   },
   logFooter: {
