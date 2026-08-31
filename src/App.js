@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -6,7 +6,9 @@ import {
   SafeAreaView, 
   ScrollView, 
   TouchableOpacity, 
-  StatusBar 
+  StatusBar,
+  Animated,
+  Easing 
 } from 'react-native';
 
 // استيراد وسيط قاعدة البيانات المحلي للديسكتوب
@@ -18,6 +20,76 @@ import InventoryScreen from './screens/InventoryScreen';
 import TreasuryScreen from './screens/TreasuryScreen';
 import ContactsScreen from './screens/ContactsScreen';
 import ReportsScreen from './screens/ReportsScreen';
+
+// ==========================================
+// 💎 المكون التفاعلي: الأيقونة الزجاجية 3D التفاعلية والنائمة/المتحركة
+// ==========================================
+const Glass3DIcon = ({ icon, gradientColor, borderColor, shadowColor, size = 64 }) => {
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    // حركة الطفو للأعلى وللأسفل
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: -5,
+          duration: 1600,
+          easing: Easing.inOut(Easing.sine),
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 1600,
+          easing: Easing.inOut(Easing.sine),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // حركة نبض الحجم والوهج
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.06,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <View style={[styles.glassWrapper, { width: size + 10, height: size + 10 }]}>
+      <Animated.View 
+        style={[
+          styles.glassOuterRing,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderColor: borderColor,
+            shadowColor: shadowColor,
+            transform: [
+              { translateY: floatAnim },
+              { scale: pulseAnim }
+            ]
+          }
+        ]}
+      >
+        <View style={[styles.glassInnerCore, { backgroundColor: gradientColor, borderRadius: size / 2 }]}>
+          <View style={styles.glassHighlight} />
+          <Text style={[styles.glassIconText, { fontSize: size * 0.45 }]}>{icon}</Text>
+        </View>
+      </Animated.View>
+    </View>
+  );
+};
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('dashboard');
@@ -91,10 +163,16 @@ export default function App() {
   };
 
   // بطاقة إحصائية علوية فاخرة
-  const StatCard = ({ title, amount, color, icon }) => (
+  const StatCard = ({ title, amount, color, icon, bgGlow, borderColor }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text style={styles.cardIcon}>{icon}</Text>
+        <Glass3DIcon 
+          icon={icon} 
+          gradientColor={bgGlow} 
+          borderColor={borderColor} 
+          shadowColor={color} 
+          size={42} 
+        />
         <Text style={styles.cardTitle}>{title}</Text>
       </View>
       <Text style={[styles.cardAmount, { color: color }]}>
@@ -108,7 +186,13 @@ export default function App() {
     const isDanger = type === 'danger';
     return (
       <View style={[styles.alertCard, isDanger ? styles.alertDanger : styles.alertWarning]}>
-        <Text style={styles.alertBadgeIcon}>{isDanger ? '⚠️' : '🔔'}</Text>
+        <Glass3DIcon 
+          icon={isDanger ? '⚠️' : '🔔'} 
+          gradientColor={isDanger ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)'} 
+          borderColor={isDanger ? '#FCA5A5' : '#FDE68A'} 
+          shadowColor={isDanger ? '#EF4444' : '#F59E0B'} 
+          size={38} 
+        />
         <View style={styles.alertTextContainer}>
           <Text style={styles.alertMessage}>{message}</Text>
           <Text style={styles.alertDate}>{date}</Text>
@@ -117,12 +201,16 @@ export default function App() {
     );
   };
 
-  // زر التنقل في الشبكة الرئيسية
-  const MenuButton = ({ title, icon, action, bgGlow }) => (
+  // زر التنقل الفاخر في الشبكة الرئيسية
+  const MenuButton = ({ title, icon, action, bgGlow, borderColor, shadowColor }) => (
     <TouchableOpacity style={styles.menuButton} onPress={() => setCurrentScreen(action)} activeOpacity={0.85}>
-      <View style={[styles.menuIconPlaceholder, { backgroundColor: bgGlow }]}>
-        <Text style={styles.menuIconText}>{icon}</Text>
-      </View>
+      <Glass3DIcon 
+        icon={icon} 
+        gradientColor={bgGlow} 
+        borderColor={borderColor} 
+        shadowColor={shadowColor} 
+        size={64} 
+      />
       <Text style={styles.menuButtonText}>{title}</Text>
     </TouchableOpacity>
   );
@@ -134,11 +222,32 @@ export default function App() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>المركز المالي اليومي</Text>
         <View style={styles.statsRow}>
-          <StatCard title="صافي اليوم" amount={stats.dailyNet} color="#10B981" icon="📈" />
-          <StatCard title="الصندوق" amount={stats.cashBalance} color="#2563EB" icon="💵" />
+          <StatCard 
+            title="صافي اليوم" 
+            amount={stats.dailyNet} 
+            color="#10B981" 
+            icon="📈" 
+            bgGlow="rgba(16, 185, 129, 0.15)"
+            borderColor="#6EE7B7"
+          />
+          <StatCard 
+            title="الصندوق" 
+            amount={stats.cashBalance} 
+            color="#2563EB" 
+            icon="💵" 
+            bgGlow="rgba(37, 99, 235, 0.15)"
+            borderColor="#93C5FD"
+          />
         </View>
         <View style={styles.statsRow}>
-          <StatCard title="البنك" amount={stats.bankBalance} color="#4F46E5" icon="🏦" />
+          <StatCard 
+            title="البنك" 
+            amount={stats.bankBalance} 
+            color="#4F46E5" 
+            icon="🏦" 
+            bgGlow="rgba(79, 70, 229, 0.15)"
+            borderColor="#C7D2FE"
+          />
         </View>
       </View>
 
@@ -153,11 +262,46 @@ export default function App() {
       <View style={[styles.section, { marginBottom: 35 }]}>
         <Text style={styles.sectionTitle}>العمليات السريعة</Text>
         <View style={styles.menuGrid}>
-          <MenuButton title="حركة اليوم" icon="🛒" action="daily" bgGlow="#EFF6FF" />
-          <MenuButton title="المخزون" icon="📦" action="inventory" bgGlow="#F0FDF4" />
-          <MenuButton title="النقدية" icon="💰" action="treasury" bgGlow="#FEF3C7" />
-          <MenuButton title="الديون" icon="👥" action="contacts" bgGlow="#EEF2FF" />
-          <MenuButton title="التقارير" icon="📊" action="reports" bgGlow="#F3E8FF" />
+          <MenuButton 
+            title="حركة اليوم" 
+            icon="🛒" 
+            action="daily" 
+            bgGlow="rgba(59, 130, 246, 0.18)" 
+            borderColor="#93C5FD"
+            shadowColor="#3B82F6"
+          />
+          <MenuButton 
+            title="المخزون" 
+            icon="📦" 
+            action="inventory" 
+            bgGlow="rgba(16, 185, 129, 0.18)" 
+            borderColor="#A7F3D0"
+            shadowColor="#10B981"
+          />
+          <MenuButton 
+            title="النقدية" 
+            icon="💰" 
+            action="treasury" 
+            bgGlow="rgba(245, 158, 11, 0.18)" 
+            borderColor="#FDE68A"
+            shadowColor="#F59E0B"
+          />
+          <MenuButton 
+            title="الديون" 
+            icon="👥" 
+            action="contacts" 
+            bgGlow="rgba(99, 102, 241, 0.18)" 
+            borderColor="#C7D2FE"
+            shadowColor="#6366F1"
+          />
+          <MenuButton 
+            title="التقارير" 
+            icon="📊" 
+            action="reports" 
+            bgGlow="rgba(168, 85, 247, 0.18)" 
+            borderColor="#E9D5FF"
+            shadowColor="#A855F7"
+          />
         </View>
       </View>
     </ScrollView>
@@ -174,9 +318,13 @@ export default function App() {
             <Text style={styles.backButtonText}>{"➔ عودة للرئيسية"}</Text>
           </TouchableOpacity>
         ) : (
-          <View style={styles.logoBadge}>
-            <Text style={styles.logoIcon}>⚖️</Text>
-          </View>
+          <Glass3DIcon 
+            icon="⚖️" 
+            gradientColor="rgba(79, 70, 229, 0.15)" 
+            borderColor="#C7D2FE" 
+            shadowColor="#4338CA" 
+            size={36} 
+          />
         )}
         <Text style={styles.headerTitle}>نظام الميزان المحاسبي</Text>
         <View style={styles.dateBadge}>
@@ -194,14 +342,14 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F1F5F9', // خلفية رمادية فائقة النعومة لإبراز البطاقات البيضاء
+    backgroundColor: '#F1F5F9',
   },
   header: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingVertical: 10,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
@@ -217,22 +365,9 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     textAlign: 'center',
   },
-  logoBadge: {
-    backgroundColor: '#F8FAFC',
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  logoIcon: {
-    fontSize: 18,
-  },
   dateBadge: {
     backgroundColor: '#EEF2FF',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
@@ -276,15 +411,15 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 14,
     flex: 1,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
     elevation: 2,
   },
   cardHeader: {
@@ -293,11 +428,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 6,
   },
-  cardIcon: {
-    fontSize: 16,
-  },
   cardTitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#64748B',
     fontWeight: '700',
     textAlign: 'right',
@@ -316,27 +448,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
+    borderRadius: 16,
+    padding: 10,
+    paddingHorizontal: 14,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRightWidth: 5,
     shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
   alertDanger: { borderRightColor: '#EF4444' },
   alertWarning: { borderRightColor: '#F59E0B' },
-  alertBadgeIcon: {
-    fontSize: 16,
-    marginLeft: 8,
-  },
   alertTextContainer: {
     flex: 1,
     alignItems: 'flex-end',
+    marginRight: 10,
   },
   alertMessage: {
     fontSize: 13,
@@ -352,37 +482,64 @@ const styles = StyleSheet.create({
   menuGrid: {
     flexDirection: 'row-reverse',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 12,
   },
   menuButton: {
     backgroundColor: '#FFFFFF',
-    width: '31%',
-    aspectRatio: 1,
-    borderRadius: 14,
+    width: '30%',
+    aspectRatio: 0.9,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  menuIconPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  menuIconText: {
-    fontSize: 22,
+    shadowColor: '#475569',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+    paddingVertical: 10,
   },
   menuButtonText: {
     fontSize: 12,
     fontWeight: '800',
     color: '#334155',
+    marginTop: 4,
+  },
+
+  // 💎 أنماط التصميم الزجاجي والـ 3D للأيقونات
+  glassWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  glassOuterRing: {
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  glassInnerCore: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  glassHighlight: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '45%',
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+    borderTopLeftRadius: 100,
+    borderTopRightRadius: 100,
+  },
+  glassIconText: {
+    textAlign: 'center',
   },
 });
