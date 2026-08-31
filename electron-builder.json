@@ -6,7 +6,9 @@
   },
   "files": [
     "dist/**/*",
-    "main.js"
+    "main.js",
+    "preload.js",
+    "package.json"
   ],
   "win": {
     "target": "portable"
