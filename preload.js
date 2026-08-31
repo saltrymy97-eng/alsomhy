@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('api', {
 // 2. الجسر العام والآمن للتطبيق (window.electronAPI)
 // ==========================================
 contextBridge.exposeInMainWorld('electronAPI', {
+  // اختصار مباشر لـ query لضمان التوافق التام
+  query: (sql, params = []) => ipcRenderer.invoke('db-query', sql, params),
+
   // معلومات البيئة الأساسية
   platform: process.platform,
   versions: {
