@@ -10,9 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
-import * as SQLite from 'expo-sqlite';
-
-const db = SQLite.openDatabaseSync('accounting.db');
+import db from '../db';
 
 export default function ContactsScreen() {
   const [activeTab, setActiveTab] = useState('customer'); // 'customer' للعملاء أو 'supplier' للموردين
@@ -25,9 +23,9 @@ export default function ContactsScreen() {
     initTableAndFetch();
   }, [activeTab]);
 
-  const initTableAndFetch = () => {
+  const initTableAndFetch = async () => {
     try {
-      db.execSync(`
+      await db.query(`
         CREATE TABLE IF NOT EXISTS contacts_ledger (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
@@ -36,25 +34,25 @@ export default function ContactsScreen() {
           type TEXT NOT NULL
         );
       `);
-      fetchContacts();
+      await fetchContacts();
     } catch (error) {
       console.error('خطأ في تهيئة جدول الديون والمستحقات:', error);
     }
   };
 
-  const fetchContacts = () => {
+  const fetchContacts = async () => {
     try {
-      const results = db.getAllSync(
+      const results = await db.query(
         'SELECT * FROM contacts_ledger WHERE type = ? ORDER BY id DESC;',
         [activeTab]
       );
-      setContactsList(results);
+      setContactsList(results || []);
     } catch (error) {
       console.error('خطأ في جلب السجلات:', error);
     }
   };
 
-  const handleSaveContact = () => {
+  const handleSaveContact = async () => {
     if (!name || !amountDue || !dueDate) {
       Alert.alert('تنبيه', 'يرجى إدخال اسم الطرف، المبلغ، وتاريخ الاستحقاق.');
       return;
@@ -62,7 +60,7 @@ export default function ContactsScreen() {
 
     try {
       const numAmount = parseFloat(amountDue);
-      db.runSync(
+      await db.query(
         'INSERT INTO contacts_ledger (name, amount, date, type) VALUES (?, ?, ?, ?);',
         [name, numAmount, dueDate, activeTab]
       );
@@ -70,7 +68,7 @@ export default function ContactsScreen() {
       setName('');
       setAmountDue('');
       setDueDate('');
-      fetchContacts();
+      await fetchContacts();
     } catch (error) {
       console.error('خطأ في حفظ السجل:', error);
       Alert.alert('خطأ', 'فشل حفظ السجل في قاعدة البيانات.');
@@ -88,7 +86,7 @@ export default function ContactsScreen() {
         <Text style={styles.detailText}>
           {activeTab === 'customer' ? 'المبلغ المطلوب منه:' : 'المبلغ المستحق له:'}
         </Text>
-        <Text style={styles.amountText}>{item.amount.toLocaleString()} ريال</Text>
+        <Text style={styles.amountText}>{(item.amount || 0).toLocaleString()} ريال</Text>
       </View>
     </View>
   );
