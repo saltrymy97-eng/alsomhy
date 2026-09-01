@@ -1,5 +1,5 @@
 {
-  "name": "alsomhy-accounting",
+  "name": "mizan-accounting",
   "version": "1.0.0",
   "homepage": ".",
   "main": "main.js",
@@ -22,8 +22,8 @@
   },
   "private": true,
   "build": {
-    "appId": "com.alsomhy.accounting",
-    "productName": "Alsomhy Accounting System",
+    "appId": "com.mizan.accounting",
+    "productName": "نظام الميزان",
     "extends": null,
     "directories": {
       "output": "release"
@@ -46,7 +46,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "Alsomhy Accounting"
+      "shortcutName": "نظام الميزان"
     },
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*"
