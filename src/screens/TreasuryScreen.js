@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: 12,
     alignItems: 'center',
-    justify.content: 'center', // Note: Correct property below in code logic
+    justifycontent: 'center', // Note: Correct property below in code logic
     alignContent: 'center',
     justifyContent: 'center'
   },
