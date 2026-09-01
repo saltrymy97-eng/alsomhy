@@ -13,15 +13,24 @@ import {
 import db from '../db';
 
 export default function ContactsScreen() {
-  const [activeTab, setActiveTab] = useState('customer'); // 'customer' للعملاء أو 'supplier' للموردين
+  const [activeTab, setActiveTab] = useState('customer'); // 'customer' أو 'supplier'
   const [name, setName] = useState('');
   const [amountDue, setAmountDue] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [contactsList, setContactsList] = useState([]);
+  const [monthTotal, setMonthTotal] = useState(0);
 
   useEffect(() => {
     initTableAndFetch();
-  }, [activeTab]);
+  }, [activeTab, selectedMonth]);
+
+  const changeMonth = (delta) => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const date = new Date(year, month - 1 + delta, 1);
+    const newMonthStr = date.toISOString().slice(0, 7);
+    setSelectedMonth(newMonthStr);
+  };
 
   const initTableAndFetch = async () => {
     try {
@@ -42,11 +51,25 @@ export default function ContactsScreen() {
 
   const fetchContacts = async () => {
     try {
+      // جلب السجلات وفق الفلتر الشهر المبتدئ والنوع
       const results = await db.query(
-        'SELECT * FROM contacts_ledger WHERE type = ? ORDER BY id DESC;',
-        [activeTab]
+        `SELECT * FROM contacts_ledger 
+         WHERE type = ? AND strftime('%Y-%m', date) = ? 
+         ORDER BY date ASC;`,
+        [activeTab, selectedMonth]
       );
       setContactsList(results || []);
+
+      // حساب المجموع الكلي للشهر المفلتر
+      const totalResult = await db.query(
+        `SELECT COALESCE(SUM(amount), 0) as total 
+         FROM contacts_ledger 
+         WHERE type = ? AND strftime('%Y-%m', date) = ?;`,
+        [activeTab, selectedMonth]
+      );
+      if (totalResult && totalResult[0]) {
+        setMonthTotal(totalResult[0].total || 0);
+      }
     } catch (error) {
       console.error('خطأ في جلب السجلات:', error);
     }
@@ -67,35 +90,79 @@ export default function ContactsScreen() {
 
       setName('');
       setAmountDue('');
-      setDueDate('');
       await fetchContacts();
+      Alert.alert('نجاح', 'تم تسجيل السجل بنجاح.');
     } catch (error) {
       console.error('خطأ في حفظ السجل:', error);
       Alert.alert('خطأ', 'فشل حفظ السجل في قاعدة البيانات.');
     }
   };
 
-  const renderContactItem = ({ item }) => (
-    <View style={[styles.card, activeTab === 'customer' ? styles.borderBlue : styles.borderPurple]}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.contactName}>{item.name}</Text>
-        <Text style={styles.dueDateText}>استحقاق: {item.date}</Text>
+  // التحقق مما إذا كان تاريخ الاستحقاق متأخراً عن تاريخ اليوم
+  const isOverdue = (targetDateStr) => {
+    if (!targetDateStr) return false;
+    const today = new Date().toISOString().slice(0, 10);
+    return targetDateStr < today;
+  };
+
+  const renderContactItem = ({ item }) => {
+    const overdue = isOverdue(item.date);
+
+    return (
+      <View style={[
+        styles.card, 
+        overdue ? styles.borderRed : (activeTab === 'customer' ? styles.borderBlue : styles.borderPurple),
+        overdue && styles.overdueCardBg
+      ]}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.contactName}>{item.name}</Text>
+          <View style={styles.dateBadgeContainer}>
+            {overdue && <Text style={styles.warningIcon}>⚠️ </Text>}
+            <Text style={[styles.dueDateText, overdue && styles.textRedBold]}>
+              {overdue ? `متأخر (استحقاق: ${item.date})` : `استحقاق: ${item.date}`}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.cardDetails}>
+          <Text style={styles.detailText}>
+            {activeTab === 'customer' ? 'المبلغ المطلوب منه:' : 'المبلغ المستحق له:'}
+          </Text>
+          <Text style={[styles.amountText, overdue && styles.textRedBold]}>
+            {(item.amount || 0).toLocaleString()} ر.ي
+          </Text>
+        </View>
+
+        {overdue && (
+          <View style={styles.overdueBanner}>
+            <Text style={styles.overdueBannerText}>تنبيه: تجاوز تاريخ الاستحقاق المحدد</Text>
+          </View>
+        )}
       </View>
-      
-      <View style={styles.cardDetails}>
-        <Text style={styles.detailText}>
-          {activeTab === 'customer' ? 'المبلغ المطلوب منه:' : 'المبلغ المستحق له:'}
-        </Text>
-        <Text style={styles.amountText}>{(item.amount || 0).toLocaleString()} ريال</Text>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      {/* شريط اختيار وتنقل الشهر المفلتر */}
+      <View style={styles.monthSelectorBar}>
+        <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
+          <Text style={styles.monthNavText}>▶</Text>
+        </TouchableOpacity>
+
+        <View style={styles.monthDisplayContainer}>
+          <Text style={styles.monthLabelText}>تصفية الشهر:</Text>
+          <Text style={styles.monthValueText}>{selectedMonth}</Text>
+        </View>
+
+        <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(1)}>
+          <Text style={styles.monthNavText}>◀</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* شريط التبديل بين العملاء والموردين */}
       <View style={styles.tabContainer}>
         <TouchableOpacity 
@@ -113,10 +180,20 @@ export default function ContactsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* ملخص إجمالي الشهر */}
+      <View style={styles.summaryBar}>
+        <Text style={styles.summaryLabel}>
+          إجمالي {activeTab === 'customer' ? 'ديون العملاء' : 'مستحقات الموردين'} لشهـر {selectedMonth}:
+        </Text>
+        <Text style={[styles.summaryValue, activeTab === 'customer' ? styles.textBlue : styles.textPurple]}>
+          {monthTotal.toLocaleString()} ر.ي
+        </Text>
+      </View>
+
       {/* قسم الإدخال */}
       <View style={styles.inputSection}>
         <Text style={styles.sectionTitle}>
-          {activeTab === 'customer' ? 'إضافة دين على عميل' : 'إضافة مستحق لمورد'}
+          {activeTab === 'customer' ? 'إضافة دين جديد على عميل' : 'إضافة مستحق جديد لمورد'}
         </Text>
 
         <TextInput
@@ -127,26 +204,32 @@ export default function ContactsScreen() {
         />
 
         <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, { flex: 1, marginLeft: 10 }]}
-            placeholder="تاريخ الاستحقاق (YYYY-MM-DD)"
-            value={dueDate}
-            onChangeText={setDueDate}
-          />
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            keyboardType="numeric"
-            placeholder="المبلغ (ريال)"
-            value={amountDue}
-            onChangeText={setAmountDue}
-          />
+          <View style={{ flex: 1, marginLeft: 8 }}>
+            <Text style={styles.fieldLabel}>تاريخ الاستحقاق:</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="YYYY-MM-DD"
+              value={dueDate}
+              onChangeText={setDueDate}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fieldLabel}>المبلغ (ريال):</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              placeholder="0"
+              value={amountDue}
+              onChangeText={setAmountDue}
+            />
+          </View>
         </View>
 
         <TouchableOpacity 
           style={[styles.saveButton, activeTab === 'customer' ? styles.bgBlue : styles.bgPurple]} 
           onPress={handleSaveContact}
         >
-          <Text style={styles.saveButtonText}>حفظ السجل 👥</Text>
+          <Text style={styles.saveButtonText}>حفظ وتوثيق السجل</Text>
         </TouchableOpacity>
       </View>
 
@@ -160,7 +243,7 @@ export default function ContactsScreen() {
           keyExtractor={item => item.id.toString()}
           renderItem={renderContactItem}
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<Text style={styles.emptyText}>لا توجد سجلات مسجلة حالياً.</Text>}
+          ListEmptyComponent={<Text style={styles.emptyText}>لا توجد سجلات لهذا الشهر المحدد.</Text>}
         />
       </View>
     </KeyboardAvoidingView>
@@ -169,6 +252,29 @@ export default function ContactsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
+  monthSelectorBar: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  monthNavBtn: {
+    backgroundColor: '#F1F5F9',
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthNavText: { fontSize: 14, color: '#334155', fontWeight: 'bold' },
+  monthDisplayContainer: { alignItems: 'center' },
+  monthLabelText: { fontSize: 11, color: '#64748B', fontWeight: '600' },
+  monthValueText: { fontSize: 15, color: '#0F172A', fontWeight: 'bold' },
+
   tabContainer: {
     flexDirection: 'row-reverse',
     backgroundColor: '#FFFFFF',
@@ -178,64 +284,91 @@ const styles = StyleSheet.create({
   },
   tabButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 10,
     alignItems: 'center',
     borderRadius: 10,
-    marginHorizontal: 5,
+    marginHorizontal: 4,
     backgroundColor: '#F1F5F9',
   },
-  activeTabBlue: { backgroundColor: '#3B82F6' },
-  activeTabPurple: { backgroundColor: '#6366F1' },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#64748B' },
+  activeTabBlue: { backgroundColor: '#2563EB' },
+  activeTabPurple: { backgroundColor: '#7C3AED' },
+  tabText: { fontSize: 13, fontWeight: '600', color: '#64748B' },
   activeTabText: { color: '#FFFFFF' },
+
+  summaryBar: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    marginHorizontal: 15,
+    marginTop: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  summaryLabel: { fontSize: 12, color: '#64748B', fontWeight: '600' },
+  summaryValue: { fontSize: 15, fontWeight: 'bold' },
+
   inputSection: {
     backgroundColor: '#FFFFFF',
-    padding: 20,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    padding: 15,
+    marginHorizontal: 15,
+    marginTop: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-    marginBottom: 15,
+    shadowRadius: 8,
+    elevation: 2,
+    marginBottom: 10,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 15,
+    marginBottom: 10,
+    textAlign: 'right',
+  },
+  fieldLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 4,
     textAlign: 'right',
   },
   inputRow: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
-    marginBottom: 15,
+    marginBottom: 12,
   },
   input: {
     backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 15,
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 14,
     color: '#0F172A',
     textAlign: 'right',
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   saveButton: {
-    borderRadius: 12,
-    padding: 15,
+    borderRadius: 10,
+    padding: 12,
     alignItems: 'center',
   },
-  bgBlue: { backgroundColor: '#3B82F6' },
-  bgPurple: { backgroundColor: '#6366F1' },
-  saveButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
-  listSection: { flex: 1, paddingHorizontal: 20 },
+  bgBlue: { backgroundColor: '#2563EB' },
+  bgPurple: { backgroundColor: '#7C3AED' },
+  saveButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold' },
+
+  listSection: { flex: 1, paddingHorizontal: 15 },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 15,
-    marginBottom: 10,
+    padding: 12,
+    marginBottom: 8,
     borderRightWidth: 4,
     shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 2 },
@@ -243,23 +376,44 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 2,
   },
-  borderBlue: { borderRightColor: '#3B82F6' },
-  borderPurple: { borderRightColor: '#6366F1' },
+  borderBlue: { borderRightColor: '#2563EB' },
+  borderPurple: { borderRightColor: '#7C3AED' },
+  borderRed: { borderRightColor: '#EF4444' },
+  overdueCardBg: { backgroundColor: '#FEF2F2' },
+
   cardHeader: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  contactName: { fontSize: 16, fontWeight: 'bold', color: '#1E293B' },
-  dueDateText: { fontSize: 13, color: '#EF4444', fontWeight: '600' },
+  contactName: { fontSize: 15, fontWeight: 'bold', color: '#1E293B' },
+  dateBadgeContainer: { flexDirection: 'row-reverse', alignItems: 'center' },
+  warningIcon: { fontSize: 12 },
+  dueDateText: { fontSize: 12, color: '#64748B', fontWeight: '600' },
+  textRedBold: { color: '#DC2626', fontWeight: 'bold' },
+
   cardDetails: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingTop: 10,
+    paddingTop: 8,
   },
-  detailText: { fontSize: 14, color: '#64748B' },
-  amountText: { fontSize: 15, fontWeight: 'bold', color: '#0F172A' },
-  emptyText: { textAlign: 'center', color: '#94A3B8', marginTop: 20, fontSize: 14 },
+  detailText: { fontSize: 13, color: '#64748B' },
+  amountText: { fontSize: 14, fontWeight: 'bold', color: '#0F172A' },
+
+  overdueBanner: {
+    marginTop: 8,
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  overdueBannerText: { fontSize: 11, color: '#DC2626', fontWeight: 'bold' },
+
+  textBlue: { color: '#2563EB' },
+  textPurple: { color: '#7C3AED' },
+  emptyText: { textAlign: 'center', color: '#94A3B8', marginTop: 15, fontSize: 13 },
 });
