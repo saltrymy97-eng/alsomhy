@@ -8,7 +8,9 @@ import {
   FlatList,
   Alert,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  SafeAreaView,
+  StatusBar
 } from 'react-native';
 import db from '../db';
 
@@ -17,23 +19,43 @@ export default function InventoryScreen() {
   const [quantity, setQuantity] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [minAlert, setMinAlert] = useState('');
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10)); // تاريخ الإدخال
+  
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [inventoryList, setInventoryList] = useState([]);
+  const [lowStockCount, setLowStockCount] = useState(0);
 
   useEffect(() => {
     initTableAndFetch();
-  }, []);
+  }, [selectedMonth]);
+
+  const changeMonth = (delta) => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const date = new Date(year, month - 1 + delta, 1);
+    setSelectedMonth(date.toISOString().slice(0, 7));
+  };
 
   const initTableAndFetch = async () => {
     try {
+      // إنشاء الجدول إذا لم يكن موجوداً
       await db.query(`
         CREATE TABLE IF NOT EXISTS inventory (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
           qty REAL NOT NULL,
           expiry TEXT NOT NULL,
-          minAlert REAL NOT NULL
+          minAlert REAL NOT NULL,
+          entry_date TEXT DEFAULT CURRENT_TIMESTAMP
         );
       `);
+
+      // محاولة إضافة عمود تاريخ الإدخال في حال كان الجدول قديماً (لتجنب الأخطاء)
+      try {
+        await db.query(`ALTER TABLE inventory ADD COLUMN entry_date TEXT;`);
+      } catch (e) {
+        // يتم تجاهل الخطأ إذا كان العمود موجوداً مسبقاً
+      }
+
       await fetchInventory();
     } catch (error) {
       console.error('خطأ في تهيئة جدول المخزون:', error);
@@ -43,17 +65,26 @@ export default function InventoryScreen() {
   const fetchInventory = async () => {
     try {
       const results = await db.query(
-        'SELECT * FROM inventory ORDER BY id DESC;'
+        `SELECT * FROM inventory 
+         WHERE entry_date LIKE ? 
+         ORDER BY id DESC;`,
+        [`${selectedMonth}%`]
       );
-      setInventoryList(results || []);
+      
+      const data = results || [];
+      setInventoryList(data);
+
+      // حساب عدد المنتجات التي وصلت لحد التنبيه في هذا الشهر
+      const lowStock = data.filter(item => item.qty <= item.minAlert).length;
+      setLowStockCount(lowStock);
     } catch (error) {
       console.error('خطأ في جلب بيانات المخزون:', error);
     }
   };
 
   const handleSaveProduct = async () => {
-    if (!productName || !quantity || !expiryDate) {
-      Alert.alert('تنبيه', 'يرجى إدخال اسم المنتج، الكمية، وتاريخ الصلاحية.');
+    if (!productName || !quantity || !expiryDate || !entryDate) {
+      Alert.alert('تنبيه', 'يرجى تعبئة جميع الحقول الأساسية.');
       return;
     }
 
@@ -62,15 +93,17 @@ export default function InventoryScreen() {
       const numMinAlert = parseFloat(minAlert) || 0;
 
       await db.query(
-        'INSERT INTO inventory (name, qty, expiry, minAlert) VALUES (?, ?, ?, ?);',
-        [productName, numQty, expiryDate, numMinAlert]
+        'INSERT INTO inventory (name, qty, expiry, minAlert, entry_date) VALUES (?, ?, ?, ?, ?);',
+        [productName, numQty, expiryDate, numMinAlert, entryDate]
       );
 
       setProductName('');
       setQuantity('');
       setExpiryDate('');
       setMinAlert('');
+      
       await fetchInventory();
+      Alert.alert('نجاح', 'تم إضافة المنتج للمخزون بنجاح.');
     } catch (error) {
       console.error('خطأ في حفظ المنتج:', error);
       Alert.alert('خطأ', 'فشل حفظ المنتج في قاعدة البيانات.');
@@ -79,106 +112,225 @@ export default function InventoryScreen() {
 
   const renderProductItem = ({ item }) => {
     const isLowStock = item.qty <= item.minAlert;
+    const isExpired = new Date(item.expiry) < new Date();
     
     return (
-      <View style={[styles.card, isLowStock ? styles.borderWarning : styles.borderNormal]}>
+      <View style={[styles.card, isLowStock ? styles.borderWarning : styles.borderNormal, isExpired && styles.borderDanger]}>
         <View style={styles.cardHeader}>
           <Text style={styles.productName}>{item.name}</Text>
-          <Text style={styles.expiryText}>ينتهي: {item.expiry}</Text>
+          <View style={styles.badgeContainer}>
+            {isLowStock && <Text style={styles.warningBadge}>نقص بالمخزون</Text>}
+            {isExpired && <Text style={styles.dangerBadge}>منتهي الصلاحية</Text>}
+          </View>
         </View>
         
         <View style={styles.cardDetails}>
-          <Text style={styles.detailText}>
-            الكمية الحالية: <Text style={styles.highlight}>{(item.qty || 0).toLocaleString()}</Text>
-          </Text>
-          <Text style={styles.detailText}>
-            حد التنبيه: <Text style={styles.highlightAlert}>{(item.minAlert || 0).toLocaleString()}</Text>
-          </Text>
+          <View style={styles.detailCol}>
+            <Text style={styles.detailLabel}>الكمية الحالية</Text>
+            <Text style={[styles.detailValue, isLowStock && styles.textWarning]}>
+              {(item.qty || 0).toLocaleString()}
+            </Text>
+          </View>
+          
+          <View style={styles.detailCol}>
+            <Text style={styles.detailLabel}>حد التنبيه</Text>
+            <Text style={styles.detailValueAlert}>{(item.minAlert || 0).toLocaleString()}</Text>
+          </View>
+          
+          <View style={styles.detailCol}>
+            <Text style={styles.detailLabel}>تاريخ الصلاحية</Text>
+            <Text style={[styles.detailValueExpiry, isExpired && styles.textDanger]}>{item.expiry}</Text>
+          </View>
         </View>
+
+        <Text style={styles.entryDateText}>تاريخ الإدخال: {item.entry_date}</Text>
       </View>
     );
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      {/* قسم إدخال منتج جديد */}
-      <View style={styles.inputSection}>
-        <Text style={styles.sectionTitle}>إضافة بضاعة للمراقبة</Text>
-        
-        <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, { flex: 1, marginLeft: 10 }]}
-            placeholder="تاريخ الصلاحية (مثال: 2026-12-01)"
-            value={expiryDate}
-            onChangeText={setExpiryDate}
-          />
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            placeholder="اسم المنتج"
-            value={productName}
-            onChangeText={setProductName}
-          />
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        {/* شريط اختيار وتنقل الشهر المفلتر */}
+        <View style={styles.monthSelectorBar}>
+          <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
+            <Text style={styles.monthNavText}>▶</Text>
+          </TouchableOpacity>
+
+          <View style={styles.monthDisplayContainer}>
+            <Text style={styles.monthLabelText}>جرد شهر:</Text>
+            <Text style={styles.monthValueText}>{selectedMonth}</Text>
+          </View>
+
+          <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(1)}>
+            <Text style={styles.monthNavText}>◀</Text>
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, { flex: 1, marginLeft: 10 }]}
-            keyboardType="numeric"
-            placeholder="حد تنبيه النقص"
-            value={minAlert}
-            onChangeText={setMinAlert}
-          />
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            keyboardType="numeric"
-            placeholder="الكمية المتوفرة"
-            value={quantity}
-            onChangeText={setQuantity}
-          />
+        {/* ملخص المخزون للشهر */}
+        <View style={styles.summaryBar}>
+          <Text style={styles.summaryLabel}>تنبيهات نقص المخزون لهذا الشهر:</Text>
+          <Text style={[styles.summaryValue, lowStockCount > 0 ? styles.textWarning : styles.textSuccess]}>
+            {lowStockCount} منتجات
+          </Text>
         </View>
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleSaveProduct}>
-          <Text style={styles.saveButtonText}>حفظ في المخزون 📦</Text>
-        </TouchableOpacity>
-      </View>
+        {/* قسم إدخال منتج جديد */}
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionTitle}>تسجيل بضاعة جديدة</Text>
+          
+          <View style={styles.inputRow}>
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text style={styles.fieldLabel}>اسم المنتج:</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="أدخل اسم المنتج"
+                value={productName}
+                onChangeText={setProductName}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>تاريخ الإدخال:</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="YYYY-MM-DD"
+                value={entryDate}
+                onChangeText={setEntryDate}
+              />
+            </View>
+          </View>
 
-      {/* قسم قائمة المخزون */}
-      <View style={styles.listSection}>
-        <Text style={styles.sectionTitle}>المخزون الحالي والتنبيهات</Text>
-        <FlatList
-          data={inventoryList}
-          keyExtractor={item => item.id.toString()}
-          renderItem={renderProductItem}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<Text style={styles.emptyText}>لا توجد بضائع مسجلة حالياً.</Text>}
-        />
-      </View>
-    </KeyboardAvoidingView>
+          <View style={styles.inputRow}>
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text style={styles.fieldLabel}>الكمية المتوفرة:</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="0"
+                value={quantity}
+                onChangeText={setQuantity}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>تاريخ الصلاحية:</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="YYYY-MM-DD"
+                value={expiryDate}
+                onChangeText={setExpiryDate}
+              />
+            </View>
+          </View>
+
+          <View style={styles.inputRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>الحد الأدنى للتنبيه:</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="مثال: 5"
+                value={minAlert}
+                onChangeText={setMinAlert}
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveProduct} activeOpacity={0.8}>
+            <Text style={styles.saveButtonText}>حفظ في المخزون</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* قسم قائمة المخزون */}
+        <View style={styles.listSection}>
+          <Text style={styles.sectionTitle}>قائمة المخزون ({selectedMonth})</Text>
+          <FlatList
+            data={inventoryList}
+            keyExtractor={item => item.id.toString()}
+            renderItem={renderProductItem}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 20 }}
+            ListEmptyComponent={<Text style={styles.emptyText}>لا توجد بضائع مسجلة في هذا الشهر.</Text>}
+          />
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
+  monthSelectorBar: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  monthNavBtn: {
+    backgroundColor: '#F1F5F9',
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthNavText: { fontSize: 14, color: '#334155', fontWeight: 'bold' },
+  monthDisplayContainer: { alignItems: 'center' },
+  monthLabelText: { fontSize: 11, color: '#64748B', fontWeight: '600' },
+  monthValueText: { fontSize: 15, color: '#0F172A', fontWeight: 'bold' },
+
+  summaryBar: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    marginHorizontal: 15,
+    marginTop: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  summaryLabel: { fontSize: 12, color: '#64748B', fontWeight: '600' },
+  summaryValue: { fontSize: 14, fontWeight: 'bold' },
+  textSuccess: { color: '#10B981' },
+  textWarning: { color: '#F59E0B' },
+  textDanger: { color: '#EF4444' },
+
   inputSection: {
     backgroundColor: '#FFFFFF',
-    padding: 20,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    padding: 15,
+    marginHorizontal: 15,
+    marginTop: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-    marginBottom: 15,
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    marginBottom: 10,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 15,
+    marginBottom: 12,
+    textAlign: 'right',
+  },
+  fieldLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 4,
     textAlign: 'right',
   },
   inputRow: {
@@ -188,27 +340,28 @@ const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 15,
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 13,
     color: '#0F172A',
     textAlign: 'right',
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   saveButton: {
-    backgroundColor: '#10B981',
-    borderRadius: 12,
-    padding: 15,
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    padding: 12,
     alignItems: 'center',
     marginTop: 5,
   },
-  saveButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
-  listSection: { flex: 1, paddingHorizontal: 20 },
+  saveButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold' },
+
+  listSection: { flex: 1, paddingHorizontal: 15 },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 15,
+    padding: 12,
     marginBottom: 10,
     borderRightWidth: 4,
     shadowColor: '#64748B',
@@ -216,25 +369,38 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 5,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   borderNormal: { borderRightColor: '#3B82F6' },
   borderWarning: { borderRightColor: '#F59E0B' },
+  borderDanger: { borderRightColor: '#EF4444' },
+  
   cardHeader: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 10,
   },
-  productName: { fontSize: 16, fontWeight: 'bold', color: '#1E293B' },
-  expiryText: { fontSize: 13, color: '#EF4444', fontWeight: '600' },
+  productName: { fontSize: 15, fontWeight: 'bold', color: '#1E293B' },
+  badgeContainer: { flexDirection: 'row-reverse', gap: 5 },
+  warningBadge: { backgroundColor: '#FEF3C7', color: '#D97706', fontSize: 10, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, fontWeight: 'bold' },
+  dangerBadge: { backgroundColor: '#FEE2E2', color: '#DC2626', fontSize: 10, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, fontWeight: 'bold' },
+  
   cardDetails: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
     paddingTop: 10,
+    marginBottom: 8,
   },
-  detailText: { fontSize: 14, color: '#64748B' },
-  highlight: { fontWeight: 'bold', color: '#0F172A' },
-  highlightAlert: { fontWeight: 'bold', color: '#F59E0B' },
-  emptyText: { textAlign: 'center', color: '#94A3B8', marginTop: 20, fontSize: 14 },
+  detailCol: { alignItems: 'center' },
+  detailLabel: { fontSize: 11, color: '#64748B', marginBottom: 2 },
+  detailValue: { fontSize: 14, fontWeight: 'bold', color: '#0F172A' },
+  detailValueAlert: { fontSize: 14, fontWeight: 'bold', color: '#F59E0B' },
+  detailValueExpiry: { fontSize: 12, fontWeight: '600', color: '#64748B' },
+  
+  entryDateText: { fontSize: 10, color: '#94A3B8', textAlign: 'right', marginTop: 4 },
+  emptyText: { textAlign: 'center', color: '#94A3B8', marginTop: 20, fontSize: 13 },
 });
