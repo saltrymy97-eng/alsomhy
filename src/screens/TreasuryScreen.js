@@ -1,4 +1,4 @@
-Import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -20,6 +20,8 @@ export default function TreasuryScreen() {
   const [transactionType, setTransactionType] = useState('deposit'); // deposit, withdraw, transfer
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
   const [transactions, setTransactions] = useState([]);
 
   useEffect(() => {
@@ -28,7 +30,15 @@ export default function TreasuryScreen() {
       await fetchData();
     };
     setup();
-  }, []);
+  }, [selectedMonth, selectedDate]);
+
+  const changeMonth = (delta) => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const date = new Date(year, month - 1 + delta, 1);
+    const newMonthStr = date.toISOString().slice(0, 7);
+    setSelectedMonth(newMonthStr);
+    setSelectedDate(`${newMonthStr}-01`);
+  };
 
   // تهيئة الجداول في قاعدة البيانات بشكل لامتزامن
   const initDB = async () => {
@@ -60,7 +70,7 @@ export default function TreasuryScreen() {
     }
   };
 
-  // جلب البيانات والأرصدة من قاعدة البيانات
+  // جلب البيانات والأرصدة من قاعدة البيانات المفلترة
   const fetchData = async () => {
     try {
       const balanceRes = await db.query('SELECT * FROM treasury_balances LIMIT 1;');
@@ -69,8 +79,12 @@ export default function TreasuryScreen() {
         setBankBalance(balanceRes[0].bank_balance || 0);
       }
 
+      // جلب الحركات للفي التصفية التاريخية
       const txRes = await db.query(
-        'SELECT * FROM treasury_transactions ORDER BY id DESC;'
+        `SELECT * FROM treasury_transactions 
+         WHERE strftime('%Y-%m', created_at) = ? 
+         ORDER BY id DESC;`,
+        [selectedMonth]
       );
       setTransactions(txRes || []);
     } catch (error) {
@@ -119,9 +133,11 @@ export default function TreasuryScreen() {
         [newCash, newBank]
       );
 
+      const timestamp = `${selectedDate} ${new Date().toTimeString().slice(0, 8)}`;
+
       await db.query(
-        'INSERT INTO treasury_transactions (type, amount, description) VALUES (?, ?, ?);',
-        [transactionType, numAmount, description.trim()]
+        'INSERT INTO treasury_transactions (type, amount, description, created_at) VALUES (?, ?, ?, ?);',
+        [transactionType, numAmount, description.trim(), timestamp]
       );
 
       // إعادة تصفير الحقول وإعادة جلب البيانات
@@ -141,31 +157,26 @@ export default function TreasuryScreen() {
   const getTransactionBadge = (type) => {
     switch (type) {
       case 'deposit':
-        return { label: 'إيداع صندوق', color: '#10B981', emoji: '📥' };
+        return { label: 'إيداع صندوق', color: '#10B981' };
       case 'withdraw':
-        return { label: 'سحب صندوق', color: '#EF4444', emoji: '📤' };
+        return { label: 'سحب صندوق', color: '#EF4444' };
       case 'transfer':
-        return { label: 'تحويل للبنك', color: '#3B82F6', emoji: '🔀' };
+        return { label: 'تحويل للبنك', color: '#2563EB' };
       default:
-        return { label: 'حركة نقدية', color: '#64748B', emoji: '📌' };
+        return { label: 'حركة نقدية', color: '#64748B' };
     }
   };
 
   // عنصر القائمة للحركات
   const renderTransactionItem = ({ item }) => {
     const badge = getTransactionBadge(item.type);
-    const formattedDate = new Date(item.created_at).toLocaleString('ar-YE', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    });
 
     return (
       <View style={styles.historyCard}>
         <View style={styles.historyRight}>
-          <Text style={styles.historyEmoji}>{badge.emoji}</Text>
           <View style={styles.historyDetails}>
             <Text style={styles.historyDescription}>{item.description}</Text>
-            <Text style={styles.historyDate}>{formattedDate}</Text>
+            <Text style={styles.historyDate}>{item.created_at}</Text>
           </View>
         </View>
         <View style={styles.historyLeft}>
@@ -184,34 +195,48 @@ export default function TreasuryScreen() {
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={{ flex: 1 }}>
           
-          {/* Header */}
-          <View style={styles.headerContainer}>
-            <Text style={styles.headerTitle}>إدارة النقدية الخزينة</Text>
-            <Text style={styles.headerSubtitle}>متابعة السيولة النقدية والتحويلات</Text>
+          {/* شريط اختيار وتنقل الشهر المفلتر */}
+          <View style={styles.monthSelectorBar}>
+            <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
+              <Text style={styles.monthNavText}>▶</Text>
+            </TouchableOpacity>
+
+            <View style={styles.monthDisplayContainer}>
+              <Text style={styles.monthLabelText}>تصفية الشهر:</Text>
+              <Text style={styles.monthValueText}>{selectedMonth}</Text>
+            </View>
+
+            <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(1)}>
+              <Text style={styles.monthNavText}>◀</Text>
+            </TouchableOpacity>
           </View>
 
           {/* 1. الأرصدة العلوية */}
           <View style={styles.balancesContainer}>
             <View style={[styles.balanceCard, styles.cashCard]}>
-              <View style={styles.balanceHeader}>
-                <Text style={styles.balanceIcon}>💵</Text>
-                <Text style={styles.balanceTitle}>رصيد الصندوق</Text>
-              </View>
+              <Text style={styles.balanceTitle}>رصيد الصندوق الحالي</Text>
               <Text style={styles.balanceValue}>{(cashBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
             </View>
 
             <View style={[styles.balanceCard, styles.bankCard]}>
-              <View style={styles.balanceHeader}>
-                <Text style={styles.balanceIcon}>🏦</Text>
-                <Text style={styles.balanceTitle}>رصيد البنك</Text>
-              </View>
+              <Text style={styles.balanceTitle}>رصيد البنك الحالي</Text>
               <Text style={styles.balanceValue}>{(bankBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
             </View>
           </View>
 
           {/* 2. نموذج تسجيل حركة نقدية */}
           <View style={styles.formCard}>
-            <Text style={styles.sectionTitle}>تسجيل حركة نقدية جديدة</Text>
+            <Text style={styles.sectionTitle}>تسجيل حركة بتاريخ المفلتر</Text>
+
+            <View style={styles.dateInputWrapper}>
+              <Text style={styles.fieldLabel}>تاريخ العملية:</Text>
+              <TextInput
+                style={styles.dateInput}
+                value={selectedDate}
+                onChangeText={setSelectedDate}
+                placeholder="YYYY-MM-DD"
+              />
+            </View>
 
             {/* أزرار التبديل */}
             <View style={styles.toggleContainer}>
@@ -258,13 +283,13 @@ export default function TreasuryScreen() {
 
             {/* زر الحفظ */}
             <TouchableOpacity style={styles.saveButton} onPress={handleSaveTransaction} activeOpacity={0.8}>
-              <Text style={styles.saveButtonText}>✅ حفظ العملية</Text>
+              <Text style={styles.saveButtonText}>حفظ وتوثيق العملية</Text>
             </TouchableOpacity>
           </View>
 
           {/* 3. سجل الحركات النقدية */}
           <View style={styles.historyContainer}>
-            <Text style={styles.sectionTitle}>سجل الحركات الأخيرة</Text>
+            <Text style={styles.sectionTitle}>سجل حركات شهر {selectedMonth}</Text>
             <FlatList
               data={transactions}
               keyExtractor={(item) => item.id.toString()}
@@ -273,8 +298,7 @@ export default function TreasuryScreen() {
               contentContainerStyle={{ paddingBottom: 20 }}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyEmoji}>📭</Text>
-                  <Text style={styles.emptyText}>لا توجد حركات نقدية مسجلة حتى الآن</Text>
+                  <Text style={styles.emptyText}>لا توجد حركات نقدية مسجلة في هذا الشهر</Text>
                 </View>
               }
             />
@@ -291,42 +315,49 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  headerContainer: {
+  monthSelectorBar: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
-    alignItems: 'flex-start',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#0F172A',
-    textAlign: 'right',
+  monthNavBtn: {
+    backgroundColor: '#F1F5F9',
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justify.content: 'center', // Note: Correct property below in code logic
+    alignContent: 'center',
+    justifyContent: 'center'
   },
-  headerSubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    textAlign: 'right',
-    marginTop: 2,
-  },
+  monthNavText: { fontSize: 14, color: '#334155', fontWeight: 'bold' },
+  monthDisplayContainer: { alignItems: 'center' },
+  monthLabelText: { fontSize: 11, color: '#64748B', fontWeight: '600' },
+  monthValueText: { fontSize: 15, color: '#0F172A', fontWeight: 'bold' },
+
   balancesContainer: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginVertical: 12,
-    gap: 12,
+    paddingHorizontal: 15,
+    marginTop: 10,
+    gap: 10,
   },
   balanceCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 12,
+    padding: 12,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
+    borderColor: '#E2E8F0',
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
     elevation: 2,
   },
   cashCard: {
@@ -335,65 +366,79 @@ const styles = StyleSheet.create({
   },
   bankCard: {
     borderRightWidth: 4,
-    borderRightColor: '#3B82F6',
-  },
-  balanceHeader: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  balanceIcon: {
-    fontSize: 20,
+    borderRightColor: '#2563EB',
   },
   balanceTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
+    color: '#64748B',
+    marginBottom: 4,
+    textAlign: 'right',
   },
   balanceValue: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: 'bold',
     color: '#0F172A',
     textAlign: 'right',
   },
   currency: {
-    fontSize: 12,
-    fontWeight: '400',
+    fontSize: 11,
+    fontWeight: 'normal',
     color: '#64748B',
   },
   formCard: {
     backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    borderRadius: 18,
-    padding: 16,
+    marginHorizontal: 15,
+    marginTop: 10,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#0F172A',
+    borderColor: '#E2E8F0',
+    shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: 'bold',
     color: '#1E293B',
     textAlign: 'right',
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  dateInputWrapper: {
+    marginBottom: 8,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 3,
+    textAlign: 'right',
+  },
+  dateInput: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    padding: 6,
+    fontSize: 13,
+    color: '#0F172A',
+    textAlign: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    fontWeight: 'bold',
   },
   toggleContainer: {
     flexDirection: 'row-reverse',
     backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 12,
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 10,
   },
   toggleButton: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 7,
     alignItems: 'center',
-    borderRadius: 9,
+    borderRadius: 8,
   },
   activeDeposit: {
     backgroundColor: '#10B981',
@@ -402,82 +447,76 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
   },
   activeTransfer: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#2563EB',
   },
   toggleText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#64748B',
   },
   activeToggleText: {
     color: '#FFFFFF',
-    fontWeight: '700',
+    fontWeight: 'bold',
   },
   inputGroup: {
-    gap: 10,
-    marginBottom: 14,
+    gap: 8,
+    marginBottom: 10,
   },
   input: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
     color: '#0F172A',
     textAlign: 'right',
   },
   saveButton: {
     backgroundColor: '#0F172A',
-    flexDirection: 'row-reverse',
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
   saveButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   historyContainer: {
     flex: 1,
-    paddingHorizontal: 20,
-    marginTop: 16,
+    paddingHorizontal: 15,
+    marginTop: 10,
   },
   historyCard: {
     backgroundColor: '#FFFFFF',
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 6,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
   },
   historyRight: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 10,
     flex: 1,
-  },
-  historyEmoji: {
-    fontSize: 24,
   },
   historyDetails: {
     alignItems: 'flex-start',
     flex: 1,
   },
   historyDescription: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#1E293B',
     textAlign: 'right',
   },
   historyDate: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#94A3B8',
     marginTop: 2,
   },
@@ -485,8 +524,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   historyAmount: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   historyTypeLabel: {
     fontSize: 10,
@@ -496,15 +535,10 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 30,
-    gap: 8,
-  },
-  emptyEmoji: {
-    fontSize: 32,
+    paddingVertical: 20,
   },
   emptyText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#94A3B8',
-    fontWeight: '500',
   },
 });
