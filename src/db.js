@@ -136,7 +136,7 @@ const db = {
   }
 };
 
-// تهيئة الجداول وتصحيح الأعمدة الناقصة
+// تهيئة الجداول وتصحيح الأعمدة الناقصة تلقائياً (تجنب أخطاء no such column)
 export const initDB = async () => {
   if (!checkElectron()) {
     console.log("تم تخطي تهيئة قاعدة البيانات.");
@@ -144,7 +144,7 @@ export const initDB = async () => {
   }
 
   try {
-    // 1. جدول السجل اليومي (تمت إضافة time و type و created_at و entry_date)
+    // 1. جدول السجل اليومي (مبيعات، مشتريات، أرباح، مع دعم entry_date و date و description)
     await db.exec(`
       CREATE TABLE IF NOT EXISTS daily_transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,6 +152,7 @@ export const initDB = async () => {
         entry_date TEXT,
         time TEXT,
         type TEXT,
+        description TEXT,
         total_purchases REAL DEFAULT 0,
         total_sales REAL DEFAULT 0,
         net_profit REAL DEFAULT 0,
@@ -159,21 +160,45 @@ export const initDB = async () => {
       );
     `);
 
-    // 2. جدول المخزون (تمت إضافة name لتطابق الواجهة و type و created_at)
+    // 2. جدول المبيعات المستقل (للتقارير)
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS sales (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        total_amount REAL NOT NULL,
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 3. جدول المشتريات المستقل (للتقارير)
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS purchases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        total_amount REAL NOT NULL,
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 4. جدول المخزون (شامل كافة الاحتمالات: name, product_name, quantity, qty, min_alert_quantity, minAlert, entry_date)
     await db.exec(`
       CREATE TABLE IF NOT EXISTS inventory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
         product_name TEXT,
-        quantity INTEGER DEFAULT 0,
+        quantity REAL DEFAULT 0,
+        qty REAL DEFAULT 0,
         expiry_date TEXT,
-        min_alert_quantity INTEGER DEFAULT 0,
+        expiry TEXT,
+        min_alert_quantity REAL DEFAULT 0,
+        minAlert REAL DEFAULT 0,
+        entry_date TEXT,
         type TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    // 3. جدول النقدية (تمت إضافة type و time و created_at)
+    // 5. جدول النقدية والخزينة
     await db.exec(`
       CREATE TABLE IF NOT EXISTS treasury (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,11 +209,12 @@ export const initDB = async () => {
         date TEXT NOT NULL,
         time TEXT,
         notes TEXT,
+        description TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    // 4. جدول العملاء والموردين (تمت إضافة amount و type لتطابق الواجهة)
+    // 6. جدول العملاء والموردين (Contacts Ledger)
     await db.exec(`
       CREATE TABLE IF NOT EXISTS contacts_ledger (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -198,16 +224,18 @@ export const initDB = async () => {
         amount_due REAL DEFAULT 0,
         amount REAL DEFAULT 0,
         due_date TEXT, 
+        date TEXT,
         status TEXT DEFAULT 'pending',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    // 5. جدول المصروفات (تمت إضافة type و created_at)
+    // 7. جدول المصروفات
     await db.exec(`
       CREATE TABLE IF NOT EXISTS expenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
+        title TEXT,
+        description TEXT,
         amount REAL NOT NULL,
         date TEXT NOT NULL,
         type TEXT,
@@ -215,13 +243,53 @@ export const initDB = async () => {
       );
     `);
 
-    // إنشاء الفهارس
+    // --- آلية أمان إضافية (Migration): التأكد من إضافة أي عمود قديم غير موجود في الجداول الحالية ---
+    const tablesToCheck = ['daily_transactions', 'sales', 'purchases', 'inventory', 'treasury', 'contacts_ledger', 'expenses'];
+    
+    // إضافة الأعمدة الحرجة إن لم تكن موجودة لتفادي أخطاء SQLite تماماً
+    const ensureColumn = async (tableName, columnName, columnDef) => {
+      try {
+        const tableInfo = await db.query(`PRAGMA table_info(${tableName});`);
+        const exists = tableInfo.some(col => col.name === columnName);
+        if (!exists) {
+          await db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef};`);
+        }
+      } catch (err) {
+        // تجاهل الخطأ في حال دعم الجدول مسبقاً
+      }
+    };
+
+    await ensureColumn('daily_transactions', 'entry_date', 'TEXT');
+    await ensureColumn('daily_transactions', 'date', 'TEXT');
+    await ensureColumn('daily_transactions', 'description', 'TEXT');
+    
+    await ensureColumn('inventory', 'entry_date', 'TEXT');
+    await ensureColumn('inventory', 'name', 'TEXT');
+    await ensureColumn('inventory', 'product_name', 'TEXT');
+    await ensureColumn('inventory', 'quantity', 'REAL DEFAULT 0');
+    await ensureColumn('inventory', 'qty', 'REAL DEFAULT 0');
+    await ensureColumn('inventory', 'min_alert_quantity', 'REAL DEFAULT 0');
+    await ensureColumn('inventory', 'minAlert', 'REAL DEFAULT 0');
+    await ensureColumn('inventory', 'expiry_date', 'TEXT');
+    await ensureColumn('inventory', 'expiry', 'TEXT');
+
+    await ensureColumn('contacts_ledger', 'due_date', 'TEXT');
+    await ensureColumn('contacts_ledger', 'date', 'TEXT');
+    await ensureColumn('contacts_ledger', 'amount_due', 'REAL DEFAULT 0');
+    await ensureColumn('contacts_ledger', 'amount', 'REAL DEFAULT 0');
+    await ensureColumn('contacts_ledger', 'type', 'TEXT');
+    await ensureColumn('contacts_ledger', 'contact_type', 'TEXT');
+
+    await ensureColumn('expenses', 'description', 'TEXT');
+    await ensureColumn('expenses', 'title', 'TEXT');
+
+    // إنشاء الفهارس لضمان السرعة
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_transactions(date);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_treasury_date ON treasury(date);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_contacts_due ON contacts_ledger(due_date);`);
 
-    console.log("تم إنشاء جميع الجداول وتصحيح الأعمدة بنجاح!");
+    console.log("تم إنشاء جميع الجداول وتحديث الأعمدة بنجاح تام!");
     return true;
   } catch (error) {
     console.error("حدث خطأ أثناء إنشاء الجداول: ", error);
