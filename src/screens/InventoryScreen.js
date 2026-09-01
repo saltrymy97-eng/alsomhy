@@ -37,24 +37,21 @@ export default function InventoryScreen() {
 
   const initTableAndFetch = async () => {
     try {
-      // إنشاء الجدول إذا لم يكن موجوداً
+      // إنشاء الجدول متوافقاً مع الهيكل الموحد في db.js
       await db.query(`
         CREATE TABLE IF NOT EXISTS inventory (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          qty REAL NOT NULL,
-          expiry TEXT NOT NULL,
-          minAlert REAL NOT NULL,
-          entry_date TEXT DEFAULT CURRENT_TIMESTAMP
+          name TEXT,
+          product_name TEXT,
+          quantity REAL DEFAULT 0,
+          qty REAL DEFAULT 0,
+          expiry_date TEXT,
+          expiry TEXT,
+          min_alert_quantity REAL DEFAULT 0,
+          minAlert REAL DEFAULT 0,
+          entry_date TEXT
         );
       `);
-
-      // محاولة إضافة عمود تاريخ الإدخال في حال كان الجدول قديماً (لتجنب الأخطاء)
-      try {
-        await db.query(`ALTER TABLE inventory ADD COLUMN entry_date TEXT;`);
-      } catch (e) {
-        // يتم تجاهل الخطأ إذا كان العمود موجوداً مسبقاً
-      }
 
       await fetchInventory();
     } catch (error) {
@@ -74,8 +71,13 @@ export default function InventoryScreen() {
       const data = results || [];
       setInventoryList(data);
 
-      // حساب عدد المنتجات التي وصلت لحد التنبيه في هذا الشهر
-      const lowStock = data.filter(item => item.qty <= item.minAlert).length;
+      // حساب عدد المنتجات التي وصلت لحد التنبيه
+      const lowStock = data.filter(item => {
+        const q = item.quantity !== undefined ? item.quantity : item.qty;
+        const m = item.min_alert_quantity !== undefined ? item.min_alert_quantity : item.minAlert;
+        return q <= m;
+      }).length;
+
       setLowStockCount(lowStock);
     } catch (error) {
       console.error('خطأ في جلب بيانات المخزون:', error);
@@ -92,9 +94,11 @@ export default function InventoryScreen() {
       const numQty = parseFloat(quantity) || 0;
       const numMinAlert = parseFloat(minAlert) || 0;
 
+      // الإدخال بالأسماء الموحدة (name, product_name, quantity, qty, expiry, minAlert...) لتجنب أي تضارب
       await db.query(
-        'INSERT INTO inventory (name, qty, expiry, minAlert, entry_date) VALUES (?, ?, ?, ?, ?);',
-        [productName, numQty, expiryDate, numMinAlert, entryDate]
+        `INSERT INTO inventory (name, product_name, quantity, qty, expiry_date, expiry, min_alert_quantity, minAlert, entry_date) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        [productName, productName, numQty, numQty, expiryDate, expiryDate, numMinAlert, numMinAlert, entryDate]
       );
 
       setProductName('');
@@ -111,13 +115,18 @@ export default function InventoryScreen() {
   };
 
   const renderProductItem = ({ item }) => {
-    const isLowStock = item.qty <= item.minAlert;
-    const isExpired = new Date(item.expiry) < new Date();
+    const q = item.quantity !== undefined ? item.quantity : item.qty;
+    const m = item.min_alert_quantity !== undefined ? item.min_alert_quantity : item.minAlert;
+    const exp = item.expiry_date || item.expiry;
+    const name = item.name || item.product_name;
+
+    const isLowStock = q <= m;
+    const isExpired = exp ? new Date(exp) < new Date() : false;
     
     return (
       <View style={[styles.card, isLowStock ? styles.borderWarning : styles.borderNormal, isExpired && styles.borderDanger]}>
         <View style={styles.cardHeader}>
-          <Text style={styles.productName}>{item.name}</Text>
+          <Text style={styles.productName}>{name}</Text>
           <View style={styles.badgeContainer}>
             {isLowStock && <Text style={styles.warningBadge}>نقص بالمخزون</Text>}
             {isExpired && <Text style={styles.dangerBadge}>منتهي الصلاحية</Text>}
@@ -128,18 +137,18 @@ export default function InventoryScreen() {
           <View style={styles.detailCol}>
             <Text style={styles.detailLabel}>الكمية الحالية</Text>
             <Text style={[styles.detailValue, isLowStock && styles.textWarning]}>
-              {(item.qty || 0).toLocaleString()}
+              {(q || 0).toLocaleString()}
             </Text>
           </View>
           
           <View style={styles.detailCol}>
             <Text style={styles.detailLabel}>حد التنبيه</Text>
-            <Text style={styles.detailValueAlert}>{(item.minAlert || 0).toLocaleString()}</Text>
+            <Text style={styles.detailValueAlert}>{(m || 0).toLocaleString()}</Text>
           </View>
           
           <View style={styles.detailCol}>
             <Text style={styles.detailLabel}>تاريخ الصلاحية</Text>
-            <Text style={[styles.detailValueExpiry, isExpired && styles.textDanger]}>{item.expiry}</Text>
+            <Text style={[styles.detailValueExpiry, isExpired && styles.textDanger]}>{exp}</Text>
           </View>
         </View>
 
