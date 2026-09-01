@@ -22,14 +22,14 @@ import ContactsScreen from './screens/ContactsScreen';
 import ReportsScreen from './screens/ReportsScreen';
 
 // ==========================================
-// 💎 المكون التفاعلي: الأيقونة الزجاجية 3D التفاعلية (نسخة شديدة الإضاءة)
+// 💎 المكون التفاعلي: الأيقونة الزجاجية 3D التفاعلية
 // ==========================================
-const Glass3DIcon = ({ icon, gradientColor, borderColor, shadowColor, size = 64 }) => {
+// تمت إضافة iconScale للتحكم بحجم الإيموجي الداخلي بحرية
+const Glass3DIcon = ({ icon, gradientColor, borderColor, shadowColor, size = 64, iconScale = 0.5 }) => {
   const floatAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // حركة الطفو للأعلى وللأسفل
     Animated.loop(
       Animated.sequence([
         Animated.timing(floatAnim, {
@@ -47,7 +47,6 @@ const Glass3DIcon = ({ icon, gradientColor, borderColor, shadowColor, size = 64 
       ])
     ).start();
 
-    // حركة نبض الحجم والوهج (تم تكبير النبض لزيادة الإشعاع)
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -75,7 +74,6 @@ const Glass3DIcon = ({ icon, gradientColor, borderColor, shadowColor, size = 64 
             borderRadius: size / 2,
             borderColor: borderColor,
             shadowColor: shadowColor,
-            // توهج خارجي قوي
             shadowOpacity: 0.8, 
             shadowRadius: 15,
             elevation: 12,
@@ -87,16 +85,14 @@ const Glass3DIcon = ({ icon, gradientColor, borderColor, shadowColor, size = 64 
         ]}
       >
         <View style={[styles.glassInnerCore, { backgroundColor: gradientColor, borderRadius: size / 2 }]}>
-          {/* لمعة علوية قوية */}
           <View style={styles.glassHighlight} />
-          {/* لمعة سفلية إضافية لتعزيز تأثير 3D */}
           <View style={styles.glassBottomReflection} />
           
           <Text style={[
             styles.glassIconText, 
             { 
-              fontSize: size * 0.5, 
-              // توهج داخلي للإيموجي نفسه
+              // استخدام iconScale لتكبير الأيقونة حسب الرغبة
+              fontSize: size * iconScale, 
               textShadowColor: shadowColor, 
               textShadowOffset: { width: 0, height: 0 },
               textShadowRadius: 12 
@@ -172,6 +168,7 @@ export default function App() {
     }
   };
 
+  // بطاقات الإحصائيات (تظل أيقوناتها بحجمها الطبيعي)
   const StatCard = ({ title, amount, color, icon, bgGlow, borderColor }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
@@ -180,7 +177,7 @@ export default function App() {
           gradientColor={bgGlow} 
           borderColor={borderColor} 
           shadowColor={color} 
-          size={50} // تكبير أيقونات الإحصائيات
+          size={50} 
         />
         <Text style={styles.cardTitle}>{title}</Text>
       </View>
@@ -190,6 +187,7 @@ export default function App() {
     </View>
   );
 
+  // بطاقات التنبيهات (تظل أيقوناتها بحجمها الطبيعي)
   const AlertCard = ({ type, message, date }) => {
     const isDanger = type === 'danger';
     return (
@@ -199,7 +197,7 @@ export default function App() {
           gradientColor={isDanger ? 'rgba(239, 68, 68, 0.25)' : 'rgba(245, 158, 11, 0.25)'} 
           borderColor={isDanger ? '#FCA5A5' : '#FDE68A'} 
           shadowColor={isDanger ? '#EF4444' : '#F59E0B'} 
-          size={46} // تكبير أيقونات التنبيهات
+          size={46} 
         />
         <View style={styles.alertTextContainer}>
           <Text style={styles.alertMessage}>{message}</Text>
@@ -209,6 +207,7 @@ export default function App() {
     );
   };
 
+  // أزرار العمليات (تم تصغير المربع وتكبير الأيقونة داخله)
   const MenuButton = ({ title, icon, action, bgGlow, borderColor, shadowColor, isFullWidth }) => (
     <TouchableOpacity 
       style={[styles.menuButton, isFullWidth && styles.menuButtonFull]} 
@@ -220,7 +219,8 @@ export default function App() {
         gradientColor={bgGlow} 
         borderColor={borderColor} 
         shadowColor={shadowColor} 
-        size={isFullWidth ? 68 : 76} // تكبير أيقونات القائمة الرئيسية بشكل ملحوظ
+        size={isFullWidth ? 56 : 60} // حجم زجاجة متناسق مع المربع الأصغر
+        iconScale={0.75} // تكبير الإيموجي الداخلي بشكل ملحوظ ليكون أجمل
       />
       <Text style={[styles.menuButtonText, isFullWidth && styles.menuButtonTextFull]}>{title}</Text>
     </TouchableOpacity>
@@ -229,7 +229,6 @@ export default function App() {
   const renderDashboard = () => (
     <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
       
-      {/* ملخص الأموال */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>المركز المالي اليومي</Text>
         <View style={styles.statsRow}>
@@ -241,35 +240,40 @@ export default function App() {
         </View>
       </View>
 
-      {/* مركز التنبيهات */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>التنبيهات العاجلة</Text>
         <AlertCard type="danger" message="استحقاق ديون عملاء مستحقة اليوم" date="اليوم" />
         <AlertCard type="warning" message="مراجعة أرصدة الخزينة والمخزون الدوري" date="دوري" />
       </View>
 
-      {/* أزرار العمليات - التصميم الجديد المربع */}
-      <View style={[styles.section, { marginBottom: 35 }]}>
+      <View style={[styles.section, { marginBottom: 15 }]}>
         <Text style={styles.sectionTitle}>العمليات السريعة</Text>
         <View style={styles.menuGridContainer}>
           
-          {/* الصف الأول */}
           <View style={styles.menuRow}>
             <MenuButton title="حركة اليوم" icon="🛒" action="daily" bgGlow="rgba(59, 130, 246, 0.3)" borderColor="#93C5FD" shadowColor="#3B82F6"/>
             <MenuButton title="النقدية" icon="💰" action="treasury" bgGlow="rgba(245, 158, 11, 0.3)" borderColor="#FDE68A" shadowColor="#F59E0B"/>
           </View>
 
-          {/* الصف الثاني */}
           <View style={styles.menuRow}>
             <MenuButton title="المخزون" icon="📦" action="inventory" bgGlow="rgba(16, 185, 129, 0.3)" borderColor="#A7F3D0" shadowColor="#10B981"/>
             <MenuButton title="الديون" icon="👥" action="contacts" bgGlow="rgba(99, 102, 241, 0.3)" borderColor="#C7D2FE" shadowColor="#6366F1"/>
           </View>
 
-          {/* الصف الثالث - مربع التقارير الكبير */}
           <MenuButton title="التقارير" icon="📊" action="reports" bgGlow="rgba(168, 85, 247, 0.3)" borderColor="#E9D5FF" shadowColor="#A855F7" isFullWidth={true} />
           
         </View>
       </View>
+
+      {/* بصمة المطور المحسنة */}
+      <View style={styles.footerContainer}>
+        <Text style={styles.footerText}>نظام الميزان المحاسبي • الإصدار 1.0</Text>
+        <View style={styles.developerRow}>
+          <Text style={styles.developerTitle}>تطوير:</Text>
+          <Text style={styles.developerName}>المطور سالم فهمي التريمي</Text>
+        </View>
+      </View>
+      
     </ScrollView>
   );
 
@@ -343,46 +347,47 @@ const styles = StyleSheet.create({
   alertMessage: { fontSize: 13, fontWeight: '700', color: '#1E293B', textAlign: 'right' },
   alertDate: { fontSize: 11, color: '#64748B', marginTop: 2 },
   
+  // تحسينات أزرار العمليات (الوحدات الخمس)
   menuGridContainer: {
     flexDirection: 'column',
-    gap: 16, 
+    gap: 12, // تقليل المسافة لتصبح متلاحمة
   },
   menuRow: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
-    gap: 16, 
+    gap: 12, // تقليل المسافة الأفقية
   },
   menuButton: {
     backgroundColor: '#FFFFFF',
     flex: 1, 
-    aspectRatio: 1, 
-    borderRadius: 22, 
+    height: 115, // استبدال الـ aspectRatio بارتفاع ثابت ليكون مستطيلاً وأصغر
+    borderRadius: 18, 
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#475569',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+    paddingVertical: 10,
   },
   menuButtonFull: {
     flex: undefined,
     width: '100%',
-    aspectRatio: undefined, 
-    height: 120, 
+    height: 90, // ارتفاع أقل للزر الطولي
     flexDirection: 'row-reverse', 
-    gap: 20,
+    gap: 15,
   },
   menuButtonText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '900',
     color: '#334155',
-    marginTop: 10,
+    marginTop: 8,
   },
   menuButtonTextFull: {
-    fontSize: 18,
+    fontSize: 16,
     marginTop: 0, 
   },
 
@@ -401,7 +406,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden', 
     position: 'relative' 
   },
-  // لمعة علوية أكثر سطوعاً
   glassHighlight: { 
     position: 'absolute', 
     top: '2%', left: '5%', right: '5%', 
@@ -409,7 +413,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.65)', 
     borderTopLeftRadius: 100, borderTopRightRadius: 100 
   },
-  // لمعة سفلية جديدة خفيفة
   glassBottomReflection: { 
     position: 'absolute', 
     bottom: '2%', left: '15%', right: '15%', 
@@ -418,4 +421,36 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 100, borderBottomRightRadius: 100 
   },
   glassIconText: { textAlign: 'center' },
+
+  // تنسيقات تذييل المطور
+  footerContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 40,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 4,
+  },
+  developerRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+  },
+  developerTitle: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  developerName: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#4338CA', 
+    textShadowColor: 'rgba(67, 56, 202, 0.1)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  }
 });
