@@ -7,8 +7,6 @@ import {
   TouchableOpacity,
   FlatList,
   Alert,
-  Keyboard,
-  TouchableWithoutFeedback,
   SafeAreaView,
   StatusBar,
 } from 'react-native';
@@ -17,7 +15,7 @@ import db from '../db';
 export default function TreasuryScreen() {
   const [cashBalance, setCashBalance] = useState(0);
   const [bankBalance, setBankBalance] = useState(0);
-  const [transactionType, setTransactionType] = useState('deposit'); // deposit, withdraw, transfer
+  const [transactionType, setTransactionType] = useState('deposit'); 
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -40,7 +38,6 @@ export default function TreasuryScreen() {
     setSelectedDate(`${newMonthStr}-01`);
   };
 
-  // تهيئة الجداول في قاعدة البيانات بشكل لامتزامن
   const initDB = async () => {
     try {
       await db.query(`
@@ -60,7 +57,6 @@ export default function TreasuryScreen() {
         );
       `);
 
-      // إضافة السجل الأولي للأرصدة إذا لم يكن موجوداً
       const result = await db.query('SELECT * FROM treasury_balances;');
       if (!result || result.length === 0) {
         await db.query('INSERT INTO treasury_balances (cash_balance, bank_balance) VALUES (0, 0);');
@@ -70,7 +66,6 @@ export default function TreasuryScreen() {
     }
   };
 
-  // جلب البيانات والأرصدة من قاعدة البيانات المفلترة
   const fetchData = async () => {
     try {
       const balanceRes = await db.query('SELECT * FROM treasury_balances LIMIT 1;');
@@ -79,7 +74,6 @@ export default function TreasuryScreen() {
         setBankBalance(balanceRes[0].bank_balance || 0);
       }
 
-      // جلب الحركات للفي التصفية التاريخية
       const txRes = await db.query(
         `SELECT * FROM treasury_transactions 
          WHERE strftime('%Y-%m', created_at) = ? 
@@ -92,7 +86,6 @@ export default function TreasuryScreen() {
     }
   };
 
-  // معالجة حفظ الحركة النقدية
   const handleSaveTransaction = async () => {
     const numAmount = parseFloat(amount);
 
@@ -127,7 +120,6 @@ export default function TreasuryScreen() {
     }
 
     try {
-      // تحديث الأرصدة وإدراج الحركة
       await db.query(
         'UPDATE treasury_balances SET cash_balance = ?, bank_balance = ? WHERE id = 1;',
         [newCash, newBank]
@@ -140,10 +132,8 @@ export default function TreasuryScreen() {
         [transactionType, numAmount, description.trim(), timestamp]
       );
 
-      // إعادة تصفير الحقول وإعادة جلب البيانات
       setAmount('');
       setDescription('');
-      Keyboard.dismiss();
       await fetchData();
 
       Alert.alert('نجاح', 'تم تسجيل الحركة النقدية بنجاح.');
@@ -153,7 +143,6 @@ export default function TreasuryScreen() {
     }
   };
 
-  // تنسيق نصوص ونقاط نوع الحركة
   const getTransactionBadge = (type) => {
     switch (type) {
       case 'deposit':
@@ -167,7 +156,6 @@ export default function TreasuryScreen() {
     }
   };
 
-  // عنصر القائمة للحركات
   const renderTransactionItem = ({ item }) => {
     const badge = getTransactionBadge(item.type);
 
@@ -192,120 +180,118 @@ export default function TreasuryScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={{ flex: 1 }}>
-          
-          {/* شريط اختيار وتنقل الشهر المفلتر */}
-          <View style={styles.monthSelectorBar}>
-            <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
-              <Text style={styles.monthNavText}>▶</Text>
-            </TouchableOpacity>
+      <View style={{ flex: 1 }}>
+        
+        {/* شريط اختيار وتنقل الشهر المفلتر */}
+        <View style={styles.monthSelectorBar}>
+          <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
+            <Text style={styles.monthNavText}>▶</Text>
+          </TouchableOpacity>
 
-            <View style={styles.monthDisplayContainer}>
-              <Text style={styles.monthLabelText}>تصفية الشهر:</Text>
-              <Text style={styles.monthValueText}>{selectedMonth}</Text>
-            </View>
-
-            <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(1)}>
-              <Text style={styles.monthNavText}>◀</Text>
-            </TouchableOpacity>
+          <View style={styles.monthDisplayContainer}>
+            <Text style={styles.monthLabelText}>تصفية الشهر:</Text>
+            <Text style={styles.monthValueText}>{selectedMonth}</Text>
           </View>
 
-          {/* 1. الأرصدة العلوية */}
-          <View style={styles.balancesContainer}>
-            <View style={[styles.balanceCard, styles.cashCard]}>
-              <Text style={styles.balanceTitle}>رصيد الصندوق الحالي</Text>
-              <Text style={styles.balanceValue}>{(cashBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
-            </View>
+          <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(1)}>
+            <Text style={styles.monthNavText}>◀</Text>
+          </TouchableOpacity>
+        </View>
 
-            <View style={[styles.balanceCard, styles.bankCard]}>
-              <Text style={styles.balanceTitle}>رصيد البنك الحالي</Text>
-              <Text style={styles.balanceValue}>{(bankBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
-            </View>
+        {/* 1. الأرصدة العلوية */}
+        <View style={styles.balancesContainer}>
+          <View style={[styles.balanceCard, styles.cashCard]}>
+            <Text style={styles.balanceTitle}>رصيد الصندوق الحالي</Text>
+            <Text style={styles.balanceValue}>{(cashBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
           </View>
 
-          {/* 2. نموذج تسجيل حركة نقدية */}
-          <View style={styles.formCard}>
-            <Text style={styles.sectionTitle}>تسجيل حركة بتاريخ المفلتر</Text>
-
-            <View style={styles.dateInputWrapper}>
-              <Text style={styles.fieldLabel}>تاريخ العملية:</Text>
-              <TextInput
-                style={styles.dateInput}
-                value={selectedDate}
-                onChangeText={setSelectedDate}
-                placeholder="YYYY-MM-DD"
-              />
-            </View>
-
-            {/* أزرار التبديل */}
-            <View style={styles.toggleContainer}>
-              <TouchableOpacity
-                style={[styles.toggleButton, transactionType === 'deposit' && styles.activeDeposit]}
-                onPress={() => setTransactionType('deposit')}
-              >
-                <Text style={[styles.toggleText, transactionType === 'deposit' && styles.activeToggleText]}>إيداع</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.toggleButton, transactionType === 'withdraw' && styles.activeWithdraw]}
-                onPress={() => setTransactionType('withdraw')}
-              >
-                <Text style={[styles.toggleText, transactionType === 'withdraw' && styles.activeToggleText]}>سحب</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.toggleButton, transactionType === 'transfer' && styles.activeTransfer]}
-                onPress={() => setTransactionType('transfer')}
-              >
-                <Text style={[styles.toggleText, transactionType === 'transfer' && styles.activeToggleText]}>تحويل للبنك</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* الإدخالات */}
-            <View style={styles.inputGroup}>
-              <TextInput
-                style={styles.input}
-                placeholder="المبلغ (ر.ي)"
-                placeholderTextColor="#94A3B8"
-                keyboardType="numeric"
-                value={amount}
-                onChangeText={setAmount}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="البيان / الوصف (مثال: إيراد مبيعات، مصروف...)"
-                placeholderTextColor="#94A3B8"
-                value={description}
-                onChangeText={setDescription}
-              />
-            </View>
-
-            {/* زر الحفظ */}
-            <TouchableOpacity style={styles.saveButton} onPress={handleSaveTransaction} activeOpacity={0.8}>
-              <Text style={styles.saveButtonText}>حفظ وتوثيق العملية</Text>
-            </TouchableOpacity>
+          <View style={[styles.balanceCard, styles.bankCard]}>
+            <Text style={styles.balanceTitle}>رصيد البنك الحالي</Text>
+            <Text style={styles.balanceValue}>{(bankBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
           </View>
+        </View>
 
-          {/* 3. سجل الحركات النقدية */}
-          <View style={styles.historyContainer}>
-            <Text style={styles.sectionTitle}>سجل حركات شهر {selectedMonth}</Text>
-            <FlatList
-              data={transactions}
-              keyExtractor={(item) => item.id.toString()}
-              renderItem={renderTransactionItem}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              ListEmptyComponent={
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>لا توجد حركات نقدية مسجلة في هذا الشهر</Text>
-                </View>
-              }
+        {/* 2. نموذج تسجيل حركة نقدية */}
+        <View style={styles.formCard}>
+          <Text style={styles.sectionTitle}>تسجيل حركة بتاريخ المفلتر</Text>
+
+          <View style={styles.dateInputWrapper}>
+            <Text style={styles.fieldLabel}>تاريخ العملية:</Text>
+            <TextInput
+              style={styles.dateInput}
+              value={selectedDate}
+              onChangeText={setSelectedDate}
+              placeholder="YYYY-MM-DD"
             />
           </View>
 
+          {/* أزرار التبديل */}
+          <View style={styles.toggleContainer}>
+            <TouchableOpacity
+              style={[styles.toggleButton, transactionType === 'deposit' && styles.activeDeposit]}
+              onPress={() => setTransactionType('deposit')}
+            >
+              <Text style={[styles.toggleText, transactionType === 'deposit' && styles.activeToggleText]}>إيداع</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.toggleButton, transactionType === 'withdraw' && styles.activeWithdraw]}
+              onPress={() => setTransactionType('withdraw')}
+            >
+              <Text style={[styles.toggleText, transactionType === 'withdraw' && styles.activeToggleText]}>سحب</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.toggleButton, transactionType === 'transfer' && styles.activeTransfer]}
+              onPress={() => setTransactionType('transfer')}
+            >
+              <Text style={[styles.toggleText, transactionType === 'transfer' && styles.activeToggleText]}>تحويل للبنك</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* الإدخالات */}
+          <View style={styles.inputGroup}>
+            <TextInput
+              style={styles.input}
+              placeholder="المبلغ (ر.ي)"
+              placeholderTextColor="#94A3B8"
+              keyboardType="numeric"
+              value={amount}
+              onChangeText={setAmount}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="البيان / الوصف (مثال: إيراد مبيعات، مصروف...)"
+              placeholderTextColor="#94A3B8"
+              value={description}
+              onChangeText={setDescription}
+            />
+          </View>
+
+          {/* زر الحفظ */}
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveTransaction} activeOpacity={0.8}>
+            <Text style={styles.saveButtonText}>حفظ وتوثيق العملية</Text>
+          </TouchableOpacity>
         </View>
-      </TouchableWithoutFeedback>
+
+        {/* 3. سجل الحركات النقدية */}
+        <View style={styles.historyContainer}>
+          <Text style={styles.sectionTitle}>سجل حركات شهر {selectedMonth}</Text>
+          <FlatList
+            data={transactions}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={renderTransactionItem}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 20 }}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>لا توجد حركات نقدية مسجلة في هذا الشهر</Text>
+              </View>
+            }
+          />
+        </View>
+
+      </View>
     </SafeAreaView>
   );
 }
@@ -331,9 +317,8 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: 12,
     alignItems: 'center',
-    justifycontent: 'center', // Note: Correct property below in code logic
+    justifyContent: 'center', 
     alignContent: 'center',
-    justifyContent: 'center'
   },
   monthNavText: { fontSize: 14, color: '#334155', fontWeight: 'bold' },
   monthDisplayContainer: { alignItems: 'center' },
