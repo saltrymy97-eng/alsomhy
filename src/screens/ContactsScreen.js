@@ -34,13 +34,19 @@ export default function ContactsScreen() {
 
   const initTableAndFetch = async () => {
     try {
+      // إنشاء الجدول متوافقاً مع الهيكل الموحد في db.js
       await db.query(`
         CREATE TABLE IF NOT EXISTS contacts_ledger (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
-          amount REAL NOT NULL,
-          date TEXT NOT NULL,
-          type TEXT NOT NULL
+          contact_type TEXT, 
+          type TEXT NOT NULL,
+          amount_due REAL DEFAULT 0,
+          amount REAL DEFAULT 0,
+          due_date TEXT, 
+          date TEXT,
+          status TEXT DEFAULT 'pending',
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
       `);
       await fetchContacts();
@@ -51,21 +57,21 @@ export default function ContactsScreen() {
 
   const fetchContacts = async () => {
     try {
-      // جلب السجلات وفق الفلتر الشهر المبتدئ والنوع
+      // جلب السجلات وفق فلتر الشهر والنوع (مع دعم الحقول الموحدة)
       const results = await db.query(
         `SELECT * FROM contacts_ledger 
-         WHERE type = ? AND strftime('%Y-%m', date) = ? 
-         ORDER BY date ASC;`,
-        [activeTab, selectedMonth]
+         WHERE (type = ? OR contact_type = ?) AND strftime('%Y-%m', COALESCE(due_date, date)) = ? 
+         ORDER BY COALESCE(due_date, date) ASC;`,
+        [activeTab, activeTab, selectedMonth]
       );
       setContactsList(results || []);
 
       // حساب المجموع الكلي للشهر المفلتر
       const totalResult = await db.query(
-        `SELECT COALESCE(SUM(amount), 0) as total 
+        `SELECT COALESCE(SUM(COALESCE(amount_due, amount)), 0) as total 
          FROM contacts_ledger 
-         WHERE type = ? AND strftime('%Y-%m', date) = ?;`,
-        [activeTab, selectedMonth]
+         WHERE (type = ? OR contact_type = ?) AND strftime('%Y-%m', COALESCE(due_date, date)) = ?;`,
+        [activeTab, activeTab, selectedMonth]
       );
       if (totalResult && totalResult[0]) {
         setMonthTotal(totalResult[0].total || 0);
@@ -82,10 +88,13 @@ export default function ContactsScreen() {
     }
 
     try {
-      const numAmount = parseFloat(amountDue);
+      const numAmount = parseFloat(amountDue) || 0;
+      
+      // الحفظ بكافة الأسماء المتوافقة (amount, amount_due, date, due_date, type, contact_type)
       await db.query(
-        'INSERT INTO contacts_ledger (name, amount, date, type) VALUES (?, ?, ?, ?);',
-        [name, numAmount, dueDate, activeTab]
+        `INSERT INTO contacts_ledger (name, contact_type, type, amount_due, amount, due_date, date, status) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+        [name, activeTab, activeTab, numAmount, numAmount, dueDate, dueDate, 'pending']
       );
 
       setName('');
@@ -98,7 +107,6 @@ export default function ContactsScreen() {
     }
   };
 
-  // التحقق مما إذا كان تاريخ الاستحقاق متأخراً عن تاريخ اليوم
   const isOverdue = (targetDateStr) => {
     if (!targetDateStr) return false;
     const today = new Date().toISOString().slice(0, 10);
@@ -106,7 +114,9 @@ export default function ContactsScreen() {
   };
 
   const renderContactItem = ({ item }) => {
-    const overdue = isOverdue(item.date);
+    const itemDate = item.due_date || item.date;
+    const itemAmount = item.amount_due !== undefined && item.amount_due !== null ? item.amount_due : item.amount;
+    const overdue = isOverdue(itemDate);
 
     return (
       <View style={[
@@ -119,7 +129,7 @@ export default function ContactsScreen() {
           <View style={styles.dateBadgeContainer}>
             {overdue && <Text style={styles.warningIcon}>⚠️ </Text>}
             <Text style={[styles.dueDateText, overdue && styles.textRedBold]}>
-              {overdue ? `متأخر (استحقاق: ${item.date})` : `استحقاق: ${item.date}`}
+              {overdue ? `متأخر (استحقاق: ${itemDate})` : `استحقاق: ${itemDate}`}
             </Text>
           </View>
         </View>
@@ -129,7 +139,7 @@ export default function ContactsScreen() {
             {activeTab === 'customer' ? 'المبلغ المطلوب منه:' : 'المبلغ المستحق له:'}
           </Text>
           <Text style={[styles.amountText, overdue && styles.textRedBold]}>
-            {(item.amount || 0).toLocaleString()} ر.ي
+            {(itemAmount || 0).toLocaleString()} ر.ي
           </Text>
         </View>
 
