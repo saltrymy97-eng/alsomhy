@@ -24,7 +24,6 @@ import ReportsScreen from './screens/ReportsScreen';
 // ==========================================
 // 💎 المكون التفاعلي: الأيقونة الزجاجية 3D التفاعلية
 // ==========================================
-// تمت إضافة iconScale للتحكم بحجم الإيموجي الداخلي بحرية
 const Glass3DIcon = ({ icon, gradientColor, borderColor, shadowColor, size = 64, iconScale = 0.5 }) => {
   const floatAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -91,7 +90,6 @@ const Glass3DIcon = ({ icon, gradientColor, borderColor, shadowColor, size = 64,
           <Text style={[
             styles.glassIconText, 
             { 
-              // استخدام iconScale لتكبير الأيقونة حسب الرغبة
               fontSize: size * iconScale, 
               textShadowColor: shadowColor, 
               textShadowOffset: { width: 0, height: 0 },
@@ -113,6 +111,7 @@ export default function App() {
     cashBalance: 0,
     bankBalance: 0,
   });
+  const [alerts, setAlerts] = useState([]);
 
   useEffect(() => {
     const loadAppData = async () => {
@@ -125,33 +124,54 @@ export default function App() {
   const initDatabase = async () => {
     try {
       await initDB();
-      await db.exec(`
-        CREATE TABLE IF NOT EXISTS treasury_balances (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          cash_balance REAL DEFAULT 0,
-          bank_balance REAL DEFAULT 0
-        );
-      `);
-      
-      const res = await db.getAll('SELECT * FROM treasury_balances;');
-      if (!res || res.length === 0) {
-        await db.run('INSERT INTO treasury_balances (cash_balance, bank_balance) VALUES (0, 0);');
+      // متوافق مع جداول db.js المحدثة (daily_transactions, treasury, contacts_ledger, inventory)
+      const treasuryCheck = await db.getAll('SELECT * FROM treasury LIMIT 1;');
+      if (!treasuryCheck || treasuryCheck.length === 0) {
+        await db.run('INSERT INTO treasury (account_type, transaction_type, amount, date) VALUES (?, ?, ?, ?);', ['الصندوق', 'income', 0, new Date().toISOString().split('T')[0]]);
       }
     } catch (error) {
-      console.error('خطأ في تهيئة قاعدة البيانات الرئيسية:', error);
+      console.error('خطأ في تهيئة قاعدة البيانات:', error);
     }
   };
 
   const fetchDashboardStats = async () => {
     try {
-      const res = await db.getAll('SELECT * FROM treasury_balances LIMIT 1;');
-      if (res && res.length > 0) {
-        setStats({
-          dailyNet: 15000,
-          cashBalance: res[0].cash_balance || 0,
-          bankBalance: res[0].bank_balance || 0,
+      // 1. حساب أرصدة الخزينة من جدول treasury
+      const treasuryRes = await db.getAll('SELECT account_type, SUM(CASE WHEN transaction_type IN ("income", "قبض") THEN amount ELSE -amount END) as balance FROM treasury GROUP BY account_type;');
+      let cash = 0;
+      let bank = 0;
+      if (treasuryRes && treasuryRes.length > 0) {
+        treasuryRes.forEach(item => {
+          if (item.account_type === 'الصندوق' || item.account_type === 'cash') cash += item.balance || 0;
+          if (item.account_type === 'البنك' || item.account_type === 'bank') bank += item.balance || 0;
         });
       }
+
+      // 2. حساب صافي اليوم الفعلي من جدول daily_transactions (حركة اليوم)
+      const today = new Date().toISOString().split('T')[0];
+      const logsRes = await db.getAll(`SELECT SUM(net_profit) as totalNet FROM daily_transactions WHERE date = '${today}';`);
+      const calculatedDailyNet = logsRes && logsRes[0] ? logsRes[0].totalNet || 0 : 0;
+
+      setStats({
+        dailyNet: calculatedDailyNet,
+        cashBalance: cash,
+        bankBalance: bank,
+      });
+
+      // 3. جلب التنبيهات الحقيقية من جدول contacts_ledger و inventory
+      const newAlerts = [];
+      const debtsRes = await db.getAll(`SELECT COUNT(*) as count FROM contacts_ledger WHERE amount_due > 0 AND due_date <= '${today}';`);
+      if (debtsRes[0]?.count > 0) {
+        newAlerts.push({ id: 1, type: 'danger', message: `يوجد ${debtsRes[0].count} جهات تعامل لديهم ديون مستحقة!`, date: 'عاجل' });
+      }
+
+      const invRes = await db.getAll(`SELECT COUNT(*) as count FROM inventory WHERE quantity <= min_alert_quantity;`);
+      if (invRes[0]?.count > 0) {
+        newAlerts.push({ id: 2, type: 'warning', message: `يوجد ${invRes[0].count} أصناف في المخزون قاربت على النفاد`, date: 'تنبيه' });
+      }
+
+      setAlerts(newAlerts);
+
     } catch (error) {
       console.error('خطأ في جلب بيانات اللوحة:', error);
     }
@@ -168,7 +188,6 @@ export default function App() {
     }
   };
 
-  // بطاقات الإحصائيات (تظل أيقوناتها بحجمها الطبيعي)
   const StatCard = ({ title, amount, color, icon, bgGlow, borderColor }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
@@ -187,7 +206,6 @@ export default function App() {
     </View>
   );
 
-  // بطاقات التنبيهات (تظل أيقوناتها بحجمها الطبيعي)
   const AlertCard = ({ type, message, date }) => {
     const isDanger = type === 'danger';
     return (
@@ -207,7 +225,6 @@ export default function App() {
     );
   };
 
-  // أزرار العمليات (تم تصغير المربع وتكبير الأيقونة داخله)
   const MenuButton = ({ title, icon, action, bgGlow, borderColor, shadowColor, isFullWidth }) => (
     <TouchableOpacity 
       style={[styles.menuButton, isFullWidth && styles.menuButtonFull]} 
@@ -219,8 +236,8 @@ export default function App() {
         gradientColor={bgGlow} 
         borderColor={borderColor} 
         shadowColor={shadowColor} 
-        size={isFullWidth ? 56 : 60} // حجم زجاجة متناسق مع المربع الأصغر
-        iconScale={0.75} // تكبير الإيموجي الداخلي بشكل ملحوظ ليكون أجمل
+        size={isFullWidth ? 64 : 68} 
+        iconScale={0.55} 
       />
       <Text style={[styles.menuButtonText, isFullWidth && styles.menuButtonTextFull]}>{title}</Text>
     </TouchableOpacity>
@@ -242,8 +259,15 @@ export default function App() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>التنبيهات العاجلة</Text>
-        <AlertCard type="danger" message="استحقاق ديون عملاء مستحقة اليوم" date="اليوم" />
-        <AlertCard type="warning" message="مراجعة أرصدة الخزينة والمخزون الدوري" date="دوري" />
+        {alerts.length > 0 ? (
+          alerts.map(alert => (
+            <AlertCard key={alert.id} type={alert.type} message={alert.message} date={alert.date} />
+          ))
+        ) : (
+          <View style={styles.emptyAlerts}>
+            <Text style={styles.emptyAlertsText}>لا توجد تنبيهات حالياً، كل شيء على ما يرام ✅</Text>
+          </View>
+        )}
       </View>
 
       <View style={[styles.section, { marginBottom: 15 }]}>
@@ -265,12 +289,12 @@ export default function App() {
         </View>
       </View>
 
-      {/* بصمة المطور المحسنة */}
+      {/* تذييل المطور مع تعديل اتجاه كلمة تطوير لتصبح قبل الاسم تماماً في اليسار */}
       <View style={styles.footerContainer}>
         <Text style={styles.footerText}>نظام الميزان المحاسبي • الإصدار 1.0</Text>
         <View style={styles.developerRow}>
           <Text style={styles.developerTitle}>تطوير:</Text>
-          <Text style={styles.developerName}>المطور سالم فهمي التريمي</Text>
+          <Text style={styles.developerName}>سالم فهمي التريمي</Text>
         </View>
       </View>
       
@@ -336,6 +360,7 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 13, color: '#64748B', fontWeight: '700', textAlign: 'right' },
   cardAmount: { fontSize: 19, fontWeight: '900', textAlign: 'right' },
   currency: { fontSize: 11, fontWeight: 'normal', color: '#94A3B8' },
+  
   alertCard: {
     flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 10, paddingHorizontal: 14, marginBottom: 10,
     borderWidth: 1, borderColor: '#E2E8F0', borderRightWidth: 5,
@@ -346,21 +371,22 @@ const styles = StyleSheet.create({
   alertTextContainer: { flex: 1, alignItems: 'flex-end', marginRight: 10 },
   alertMessage: { fontSize: 13, fontWeight: '700', color: '#1E293B', textAlign: 'right' },
   alertDate: { fontSize: 11, color: '#64748B', marginTop: 2 },
-  
-  // تحسينات أزرار العمليات (الوحدات الخمس)
+  emptyAlerts: { backgroundColor: '#F8FAFC', padding: 15, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center' },
+  emptyAlertsText: { color: '#64748B', fontSize: 13, fontWeight: 'bold' },
+
   menuGridContainer: {
     flexDirection: 'column',
-    gap: 12, // تقليل المسافة لتصبح متلاحمة
+    gap: 12,
   },
   menuRow: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
-    gap: 12, // تقليل المسافة الأفقية
+    gap: 12,
   },
   menuButton: {
     backgroundColor: '#FFFFFF',
     flex: 1, 
-    height: 115, // استبدال الـ aspectRatio بارتفاع ثابت ليكون مستطيلاً وأصغر
+    height: 125, 
     borderRadius: 18, 
     alignItems: 'center',
     justifyContent: 'center',
@@ -376,7 +402,7 @@ const styles = StyleSheet.create({
   menuButtonFull: {
     flex: undefined,
     width: '100%',
-    height: 90, // ارتفاع أقل للزر الطولي
+    height: 100, 
     flexDirection: 'row-reverse', 
     gap: 15,
   },
@@ -422,7 +448,6 @@ const styles = StyleSheet.create({
   },
   glassIconText: { textAlign: 'center' },
 
-  // تنسيقات تذييل المطور
   footerContainer: {
     alignItems: 'center',
     marginTop: 20,
@@ -444,6 +469,7 @@ const styles = StyleSheet.create({
   developerTitle: {
     fontSize: 13,
     color: '#64748B',
+    fontWeight: 'bold',
   },
   developerName: {
     fontSize: 14,
