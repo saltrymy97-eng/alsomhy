@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+Import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,100 +9,29 @@ import {
   SafeAreaView,
   StatusBar,
   ActivityIndicator,
-  Animated,
-  Easing,
-  Platform
 } from 'react-native';
 import db from '../db';
 import * as XLSX from 'xlsx';
 
-// ==========================================
-// 💎 المكون التفاعلي: الأيقونة الـ 3D المتحركة والفاخرة
-// ==========================================
-const Luxury3DReportsIcon = () => {
-  const floatAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    // حركة طفو 3D مستمرة
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim, {
-          toValue: -8,
-          duration: 1800,
-          easing: Easing.inOut(Easing.sine),
-          useNativeDriver: true,
-        }),
-        Animated.timing(floatAnim, {
-          toValue: 0,
-          duration: 1800,
-          easing: Easing.inOut(Easing.sine),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    // حركة نبض بريق دائرية
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.08,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
-
-  return (
-    <View style={styles.iconWrapper}>
-      <Animated.View 
-        style={[
-          styles.icon3DOuter,
-          {
-            transform: [
-              { translateY: floatAnim },
-              { scale: pulseAnim }
-            ]
-          }
-        ]}
-      >
-        <View style={styles.icon3DInner}>
-          <Text style={styles.iconEmoji}>📈</Text>
-        </View>
-      </Animated.View>
-    </View>
-  );
-};
-
 export default function ReportsScreen() {
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
   const [financialData, setFinancialData] = useState({
     totalSales: 0,
     totalPurchases: 0,
     totalExpenses: 0,
     netIncome: 0,
+    monthlySales: 0,
+    monthlyPurchases: 0,
+    monthlyExpenses: 0,
+    monthlyNetIncome: 0,
   });
   const [reportDetails, setReportDetails] = useState([]);
 
   useEffect(() => {
     initTablesAndFetchData();
-  }, [selectedMonth]);
+  }, []);
 
-  // التنقل بين الأشهُر
-  const changeMonth = (delta) => {
-    const [year, month] = selectedMonth.split('-').map(Number);
-    const date = new Date(year, month - 1 + delta, 1);
-    setSelectedMonth(date.toISOString().slice(0, 7));
-  };
-
-  // تهيئة الجداول وجلب البيانات المالية المفلترة شهرياً
+  // تهيئة الجداول وجلب وحساب البيانات المالية بشكل لامتزامن
   const initTablesAndFetchData = async () => {
     try {
       setLoading(true);
@@ -129,38 +58,18 @@ export default function ReportsScreen() {
         );
       `);
 
-      // 1. استعلامات المجاميع المالية للشهر المختار
-      const salesRes = await db.query(
-        `SELECT SUM(total_amount) as total FROM sales WHERE strftime('%Y-%m', created_at) = ?;`,
-        [selectedMonth]
-      );
-      const purchasesRes = await db.query(
-        `SELECT SUM(total_amount) as total FROM purchases WHERE strftime('%Y-%m', created_at) = ?;`,
-        [selectedMonth]
-      );
-      const expensesRes = await db.query(
-        `SELECT SUM(amount) as total FROM expenses WHERE strftime('%Y-%m', created_at) = ?;`,
-        [selectedMonth]
-      );
+      const salesRes = await db.query('SELECT SUM(total_amount) as total FROM sales;');
+      const purchasesRes = await db.query('SELECT SUM(total_amount) as total FROM purchases;');
+      const expensesRes = await db.query('SELECT SUM(amount) as total FROM expenses;');
 
       const totalSales = salesRes?.[0]?.total || 0;
       const totalPurchases = purchasesRes?.[0]?.total || 0;
       const totalExpenses = expensesRes?.[0]?.total || 0;
       const netIncome = totalSales - (totalPurchases + totalExpenses);
 
-      // 2. جلب التفاصيل الحسابية للشهر المختار
-      const allSales = (await db.query(
-        `SELECT id, total_amount, created_at FROM sales WHERE strftime('%Y-%m', created_at) = ? ORDER BY id DESC;`,
-        [selectedMonth]
-      )) || [];
-      const allPurchases = (await db.query(
-        `SELECT id, total_amount, created_at FROM purchases WHERE strftime('%Y-%m', created_at) = ? ORDER BY id DESC;`,
-        [selectedMonth]
-      )) || [];
-      const allExpenses = (await db.query(
-        `SELECT id, amount, description, created_at FROM expenses WHERE strftime('%Y-%m', created_at) = ? ORDER BY id DESC;`,
-        [selectedMonth]
-      )) || [];
+      const allSales = (await db.query('SELECT id, total_amount, created_at FROM sales ORDER BY id DESC;')) || [];
+      const allPurchases = (await db.query('SELECT id, total_amount, created_at FROM purchases ORDER BY id DESC;')) || [];
+      const allExpenses = (await db.query('SELECT id, amount, description, created_at FROM expenses ORDER BY id DESC;')) || [];
 
       const formattedDetails = [
         ...allSales.map(s => ({ البند: 'مبيعات', المبلغ: s.total_amount, البيان: 'إيراد مبيعات', التاريخ: s.created_at })),
@@ -174,6 +83,10 @@ export default function ReportsScreen() {
         totalPurchases,
         totalExpenses,
         netIncome,
+        monthlySales: totalSales,
+        monthlyPurchases: totalPurchases,
+        monthlyExpenses: totalExpenses,
+        monthlyNetIncome: netIncome,
       });
     } catch (error) {
       console.error('خطأ في جلب البيانات المالية:', error);
@@ -183,10 +96,10 @@ export default function ReportsScreen() {
     }
   };
 
-  // تصدير البيانات إلى ملف Excel (.xlsx)
+  // 1. تصدير البيانات إلى ملف Excel (.xlsx) عبر المتصفح
   const handleExportToExcel = () => {
     if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
-      Alert.alert('تنبيه', 'لا توجد بيانات مالية كافية لتصديرها للشهر المحدد.');
+      Alert.alert('تنبيه', 'لا توجد بيانات مالية كافية لتصديرها.');
       return;
     }
 
@@ -200,19 +113,19 @@ export default function ReportsScreen() {
 
       const worksheet = XLSX.utils.json_to_sheet(worksheetData);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, `تقرير_${selectedMonth}`);
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'قائمة الدخل والتقارير');
       
-      XLSX.writeFile(workbook, `Financial_Report_${selectedMonth}_${Date.now()}.xlsx`);
+      XLSX.writeFile(workbook, `Financial_Report_${Date.now()}.xlsx`);
     } catch (error) {
       console.error('خطأ في تصدير الإكسل:', error);
       Alert.alert('خطأ', 'فشل تصدير ملف الإكسل.');
     }
   };
 
-  // تصدير البيانات إلى صفحة HTML وعرضها للطباعة
+  // 2. تصدير البيانات إلى صفحة HTML وعرضها للطباعة
   const handleExportToHTML = () => {
     if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
-      Alert.alert('تنبيه', 'لا توجد بيانات كافية لإنشاء التقرير للشهر المحدد.');
+      Alert.alert('تنبيه', 'لا توجد بيانات كافية لإنشاء التقرير.');
       return;
     }
 
@@ -229,6 +142,7 @@ export default function ReportsScreen() {
         const amount = Number(item?.المبلغ) || 0;
         const desc = item?.البيان || '---';
         const date = item?.التاريخ ? new Date(item.التاريخ).toLocaleString('ar-YE') : 'غير محدد';
+        
         const amountColor = type === 'مبيعات' ? '#10B981' : '#EF4444';
 
         tableRows += `
@@ -246,7 +160,7 @@ export default function ReportsScreen() {
         <html dir="rtl" lang="ar">
         <head>
           <meta charset="UTF-8">
-          <title>قائمة الدخل والتقارير المالية - ${selectedMonth}</title>
+          <title>قائمة الدخل والتقارير المالية - البقالة</title>
           <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #F8FAFC; color: #0F172A; padding: 30px; margin: 0; }
             .container { background-color: #FFFFFF; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); max-width: 900px; margin: auto; }
@@ -267,7 +181,7 @@ export default function ReportsScreen() {
         <body>
           <div class="container">
             <div class="header">
-              <h1>تقرير قائمة الدخل والسيولة لشهر (${selectedMonth})</h1>
+              <h1>تقرير قائمة الدخل والسيولة</h1>
               <p>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-YE')}</p>
             </div>
             
@@ -277,11 +191,11 @@ export default function ReportsScreen() {
                 <p style="color: #10B981;">${safeTotalSales.toLocaleString()} ر.ي</p>
               </div>
               <div class="summary-item">
-                <h3>إجمالي المصروفات والمشتريات</h3>
+                <h3>إجمالي المصروفات</h3>
                 <p style="color: #EF4444;">${safeTotalExpensesAndPurchases.toLocaleString()} ر.ي</p>
               </div>
               <div class="summary-item">
-                <h3>صافي الدخل الشهر</h3>
+                <h3>صافي الدخل العام</h3>
                 <p style="color: #2563EB;">${safeNetIncome.toLocaleString()} ر.ي</p>
               </div>
             </div>
@@ -328,7 +242,7 @@ export default function ReportsScreen() {
     return (
       <View style={styles.loaderContainer}>
         <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={styles.loaderText}>جاري إعداد وتحليل التقارير المالية لشهر {selectedMonth}...</Text>
+        <Text style={styles.loaderText}>جاري إعداد وتحليل التقارير المالية...</Text>
       </View>
     );
   }
@@ -339,34 +253,16 @@ export default function ReportsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
-      {/* الهيدر الفاخر والأيقونة الـ 3D */}
-      <View style={styles.headerBanner}>
-        <Luxury3DReportsIcon />
-        <Text style={styles.headerTitle}>التقارير وقائمة الدخل</Text>
-      </View>
-
-      {/* شريط اختيار وتنقل الشهر الفاخر */}
-      <View style={styles.monthSelectorBar}>
-        <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
-          <Text style={styles.monthNavText}>▶</Text>
-        </TouchableOpacity>
-        
-        <View style={styles.monthDisplayContainer}>
-          <Text style={styles.monthLabelText}>تقرير شهر:</Text>
-          <Text style={styles.monthValueText}>{selectedMonth}</Text>
-        </View>
-
-        <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(1)}>
-          <Text style={styles.monthNavText}>◀</Text>
-        </TouchableOpacity>
-      </View>
-
+      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
+        <View style={styles.headerContainer}>
+          <Text style={styles.headerTitle}>التقارير وقائمة الدخل</Text>
+          <Text style={styles.headerSubtitle}>تحليل الأداء المالي والموقف العام للبقالة</Text>
+        </View>
+
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>الملخص المالي لشهر {selectedMonth}</Text>
+          <Text style={styles.sectionTitle}>الملخص المالي الشامل</Text>
           
           <View style={styles.summaryGrid}>
             <View style={[styles.card, styles.salesCard]}>
@@ -389,7 +285,7 @@ export default function ReportsScreen() {
           <View style={styles.netIncomeCard}>
             <View style={styles.netIncomeHeader}>
               <View>
-                <Text style={styles.netIncomeTitle}>صافي الدخل للشهر المختار</Text>
+                <Text style={styles.netIncomeTitle}>صافي الدخل النهائي (الربح الصافي)</Text>
                 <Text style={styles.netIncomeSubtitle}>المبيعات - (المشتريات + المصروفات)</Text>
               </View>
               <Text style={styles.largeIcon}>💰</Text>
@@ -422,14 +318,14 @@ export default function ReportsScreen() {
         </View>
 
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>عمليات شهر {selectedMonth}</Text>
+          <Text style={styles.sectionTitle}>آخر العمليات المدرجة في التقرير</Text>
           {(!Array.isArray(reportDetails) || reportDetails.length === 0) ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyEmoji}>📭</Text>
-              <Text style={styles.emptyText}>لا توجد حركات مسجلة في هذا الشهر لعرضها</Text>
+              <Text style={styles.emptyText}>لا توجد حركات مسجلة حالياً لعرضها</Text>
             </View>
           ) : (
-            reportDetails.map((item, index) => {
+            reportDetails.slice(0, 5).map((item, index) => {
               const type = item?.البند || 'غير محدد';
               const isSale = type === 'مبيعات';
               const amount = Number(item?.المبلغ) || 0;
@@ -460,96 +356,31 @@ export default function ReportsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F0F4F9' },
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
   scrollContent: { paddingBottom: 30 },
-  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0F4F9', gap: 12 },
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC', gap: 12 },
   loaderText: { fontSize: 14, color: '#64748B', fontWeight: '600' },
-  
-  // الهيدر والأيقونة الـ 3D
-  headerBanner: {
-    alignItems: 'center',
-    paddingTop: 15,
-    paddingBottom: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  iconWrapper: {
-    marginVertical: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  icon3DOuter: {
-    width: 76,
-    height: 76,
-    borderRadius: 24,
-    padding: 4,
-    backgroundColor: '#3B82F6',
-    borderColor: '#93C5FD',
-    borderWidth: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 12,
-  },
-  icon3DInner: {
-    flex: 1,
-    borderRadius: 20,
-    backgroundColor: '#1D4ED8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconEmoji: { fontSize: 36 },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#0F172A',
-    marginTop: 6,
-  },
-
-  // شريط اختيار الشهر
-  monthSelectorBar: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  monthNavBtn: {
-    backgroundColor: '#F1F5F9',
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  monthNavText: { fontSize: 14, color: '#334155', fontWeight: 'bold' },
-  monthDisplayContainer: { alignItems: 'center' },
-  monthLabelText: { fontSize: 12, color: '#64748B', fontWeight: '600' },
-  monthValueText: { fontSize: 16, color: '#0F172A', fontWeight: 'bold' },
-
-  // الأقسام والبطاقات
-  sectionContainer: { paddingHorizontal: 15, marginTop: 15 },
+  headerContainer: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8, alignItems: 'flex-start' },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: '#0F172A', textAlign: 'right' },
+  headerSubtitle: { fontSize: 13, color: '#64748B', textAlign: 'right', marginTop: 2 },
+  sectionContainer: { paddingHorizontal: 20, marginTop: 18 },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: '#1E293B', textAlign: 'right', marginBottom: 10 },
-  summaryGrid: { flexDirection: 'row-reverse', gap: 10, marginBottom: 10 },
-  card: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#F1F5F9', elevation: 2, alignItems: 'flex-start' },
+  summaryGrid: { flexDirection: 'row-reverse', gap: 12, marginBottom: 12 },
+  card: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#F1F5F9', elevation: 2, alignItems: 'flex-start' },
   salesCard: { borderRightWidth: 4, borderRightColor: '#10B981' },
   expensesCard: { borderRightWidth: 4, borderRightColor: '#EF4444' },
   cardIcon: { fontSize: 22, marginBottom: 4 },
   largeIcon: { fontSize: 28 },
   cardTitle: { fontSize: 12, fontWeight: '600', color: '#64748B', marginTop: 4 },
-  cardValue: { fontSize: 15, fontWeight: '700', marginTop: 4 },
+  cardValue: { fontSize: 16, fontWeight: '700', marginTop: 4 },
   currency: { fontSize: 11, fontWeight: '400', color: '#64748B' },
-  netIncomeCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#E2E8F0', borderRightWidth: 4, borderRightColor: '#2563EB', elevation: 2 },
+  netIncomeCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#E2E8F0', borderRightWidth: 4, borderRightColor: '#2563EB', elevation: 3 },
   netIncomeHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   netIncomeTitle: { fontSize: 14, fontWeight: '700', color: '#1E293B', textAlign: 'right' },
   netIncomeSubtitle: { fontSize: 11, color: '#64748B', textAlign: 'right', marginTop: 2 },
-  netIncomeValue: { fontSize: 20, fontWeight: '800', textAlign: 'right', marginTop: 6 },
+  netIncomeValue: { fontSize: 22, fontWeight: '800', textAlign: 'right', marginTop: 6 },
   currencyLarge: { fontSize: 13, fontWeight: '500', color: '#64748B' },
-  exportButtonsRow: { flexDirection: 'row-reverse', gap: 10 },
+  exportButtonsRow: { flexDirection: 'row-reverse', gap: 12 },
   exportButton: { flex: 1, flexDirection: 'row-reverse', justifyContent: 'center', alignItems: 'center', paddingVertical: 12, borderRadius: 12, elevation: 2 },
   excelButton: { backgroundColor: '#059669' },
   htmlButton: { backgroundColor: '#2563EB' },
