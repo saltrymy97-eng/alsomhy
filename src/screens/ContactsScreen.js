@@ -34,7 +34,6 @@ export default function ContactsScreen() {
 
   const initTableAndFetch = async () => {
     try {
-      // إنشاء الجدول متوافقاً مع الهيكل الموحد في db.js
       await db.query(`
         CREATE TABLE IF NOT EXISTS contacts_ledger (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,20 +56,24 @@ export default function ContactsScreen() {
 
   const fetchContacts = async () => {
     try {
-      // جلب السجلات وفق فلتر الشهر والنوع (مع دعم الحقول الموحدة)
+      // 💡 تعديل جوهري: جلب ديون الشهر الحالي + كافة الديون المتأخرة غير المسددة (<= selectedMonth)
       const results = await db.query(
         `SELECT * FROM contacts_ledger 
-         WHERE (type = ? OR contact_type = ?) AND strftime('%Y-%m', COALESCE(due_date, date)) = ? 
+         WHERE (type = ? OR contact_type = ?) 
+         AND COALESCE(status, 'pending') != 'paid' 
+         AND strftime('%Y-%m', COALESCE(due_date, date)) <= ? 
          ORDER BY COALESCE(due_date, date) ASC;`,
         [activeTab, activeTab, selectedMonth]
       );
       setContactsList(results || []);
 
-      // حساب المجموع الكلي للشهر المفلتر
+      // حساب المجموع الكلي مع استبعاد المسدد وتضمين المتأخرات
       const totalResult = await db.query(
         `SELECT COALESCE(SUM(COALESCE(amount_due, amount)), 0) as total 
          FROM contacts_ledger 
-         WHERE (type = ? OR contact_type = ?) AND strftime('%Y-%m', COALESCE(due_date, date)) = ?;`,
+         WHERE (type = ? OR contact_type = ?) 
+         AND COALESCE(status, 'pending') != 'paid' 
+         AND strftime('%Y-%m', COALESCE(due_date, date)) <= ?;`,
         [activeTab, activeTab, selectedMonth]
       );
       if (totalResult && totalResult[0]) {
@@ -90,7 +93,6 @@ export default function ContactsScreen() {
     try {
       const numAmount = parseFloat(amountDue) || 0;
       
-      // الحفظ بكافة الأسماء المتوافقة (amount, amount_due, date, due_date, type, contact_type)
       await db.query(
         `INSERT INTO contacts_ledger (name, contact_type, type, amount_due, amount, due_date, date, status) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
@@ -105,6 +107,34 @@ export default function ContactsScreen() {
       console.error('خطأ في حفظ السجل:', error);
       Alert.alert('خطأ', 'فشل حفظ السجل في قاعدة البيانات.');
     }
+  };
+
+  // 💡 إضافة دالة السداد الجديدة
+  const handleMarkAsPaid = (item) => {
+    Alert.alert(
+      'تأكيد السداد',
+      `هل تم سداد مبلغ ${(item.amount_due || item.amount || 0).toLocaleString()} ر.ي الخاص بـ ${item.name} بالكامل؟`,
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        { 
+          text: 'نعم، تم السداد', 
+          onPress: async () => {
+            try {
+              // تحويل الحالة إلى مدفوع بدلاً من الحذف
+              await db.query(
+                `UPDATE contacts_ledger SET status = 'paid' WHERE id = ?;`,
+                [item.id]
+              );
+              await fetchContacts(); 
+              Alert.alert('تم', 'تم تسجيل السداد بنجاح وإخفاء السجل.');
+            } catch (error) {
+              console.error('خطأ في تسجيل السداد:', error);
+              Alert.alert('خطأ', 'فشل تسجيل السداد.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const isOverdue = (targetDateStr) => {
@@ -148,6 +178,15 @@ export default function ContactsScreen() {
             <Text style={styles.overdueBannerText}>تنبيه: تجاوز تاريخ الاستحقاق المحدد</Text>
           </View>
         )}
+
+        {/* 💡 زر السداد الجديد */}
+        <TouchableOpacity 
+          style={styles.paidButton} 
+          onPress={() => handleMarkAsPaid(item)}
+        >
+          <Text style={styles.paidButtonText}>✓ تم السداد</Text>
+        </TouchableOpacity>
+
       </View>
     );
   };
@@ -157,14 +196,13 @@ export default function ContactsScreen() {
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* شريط اختيار وتنقل الشهر المفلتر */}
       <View style={styles.monthSelectorBar}>
         <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
           <Text style={styles.monthNavText}>▶</Text>
         </TouchableOpacity>
 
         <View style={styles.monthDisplayContainer}>
-          <Text style={styles.monthLabelText}>تصفية الشهر:</Text>
+          <Text style={styles.monthLabelText}>تصفية حتى شهر:</Text>
           <Text style={styles.monthValueText}>{selectedMonth}</Text>
         </View>
 
@@ -173,7 +211,6 @@ export default function ContactsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* شريط التبديل بين العملاء والموردين */}
       <View style={styles.tabContainer}>
         <TouchableOpacity 
           style={[styles.tabButton, activeTab === 'customer' && styles.activeTabBlue]} 
@@ -190,7 +227,6 @@ export default function ContactsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ملخص إجمالي الشهر */}
       <View style={styles.summaryBar}>
         <Text style={styles.summaryLabel}>
           إجمالي {activeTab === 'customer' ? 'ديون العملاء' : 'مستحقات الموردين'} لشهـر {selectedMonth}:
@@ -200,7 +236,6 @@ export default function ContactsScreen() {
         </Text>
       </View>
 
-      {/* قسم الإدخال */}
       <View style={styles.inputSection}>
         <Text style={styles.sectionTitle}>
           {activeTab === 'customer' ? 'إضافة دين جديد على عميل' : 'إضافة مستحق جديد لمورد'}
@@ -243,7 +278,6 @@ export default function ContactsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* قائمة العرض */}
       <View style={styles.listSection}>
         <Text style={styles.sectionTitle}>
           {activeTab === 'customer' ? 'قائمة ديون العملاء' : 'قائمة مستحقات الموردين'}
@@ -253,7 +287,7 @@ export default function ContactsScreen() {
           keyExtractor={item => item.id.toString()}
           renderItem={renderContactItem}
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<Text style={styles.emptyText}>لا توجد سجلات لهذا الشهر المحدد.</Text>}
+          ListEmptyComponent={<Text style={styles.emptyText}>جميع الحسابات مصفرة أو لا توجد سجلات.</Text>}
         />
       </View>
     </KeyboardAvoidingView>
@@ -422,6 +456,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   overdueBannerText: { fontSize: 11, color: '#DC2626', fontWeight: 'bold' },
+
+  // 💡 تنسيق زر السداد الجديد
+  paidButton: {
+    marginTop: 12,
+    backgroundColor: '#10B981',
+    paddingVertical: 9,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  paidButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
 
   textBlue: { color: '#2563EB' },
   textPurple: { color: '#7C3AED' },
