@@ -124,7 +124,6 @@ export default function App() {
   const initDatabase = async () => {
     try {
       await initDB();
-      // متوافق مع جداول db.js المحدثة (daily_transactions, treasury, contacts_ledger, inventory)
       const treasuryCheck = await db.getAll('SELECT * FROM treasury LIMIT 1;');
       if (!treasuryCheck || treasuryCheck.length === 0) {
         await db.run('INSERT INTO treasury (account_type, transaction_type, amount, date) VALUES (?, ?, ?, ?);', ['الصندوق', 'income', 0, new Date().toISOString().split('T')[0]]);
@@ -136,7 +135,7 @@ export default function App() {
 
   const fetchDashboardStats = async () => {
     try {
-      // 1. حساب أرصدة الخزينة من جدول treasury
+      // 1. حساب أرصدة الخزينة
       const treasuryRes = await db.getAll('SELECT account_type, SUM(CASE WHEN transaction_type IN ("income", "قبض") THEN amount ELSE -amount END) as balance FROM treasury GROUP BY account_type;');
       let cash = 0;
       let bank = 0;
@@ -147,7 +146,7 @@ export default function App() {
         });
       }
 
-      // 2. حساب صافي اليوم الفعلي من جدول daily_transactions (حركة اليوم)
+      // 2. حساب صافي اليوم الفعلي
       const today = new Date().toISOString().split('T')[0];
       const logsRes = await db.getAll(`SELECT SUM(net_profit) as totalNet FROM daily_transactions WHERE date = '${today}';`);
       const calculatedDailyNet = logsRes && logsRes[0] ? logsRes[0].totalNet || 0 : 0;
@@ -158,16 +157,18 @@ export default function App() {
         bankBalance: bank,
       });
 
-      // 3. جلب التنبيهات الحقيقية من جدول contacts_ledger و inventory
+      // 3. جلب التنبيهات الحقيقية
       const newAlerts = [];
       const debtsRes = await db.getAll(`SELECT COUNT(*) as count FROM contacts_ledger WHERE amount_due > 0 AND due_date <= '${today}';`);
       if (debtsRes[0]?.count > 0) {
         newAlerts.push({ id: 1, type: 'danger', message: `يوجد ${debtsRes[0].count} جهات تعامل لديهم ديون مستحقة!`, date: 'عاجل' });
       }
 
-      const invRes = await db.getAll(`SELECT COUNT(*) as count FROM inventory WHERE quantity <= min_alert_quantity;`);
+      // التعديل هنا: فحص المنتجات التي انتهت صلاحيتها فقط (بدلاً من الكميات)
+      const invRes = await db.getAll(`SELECT COUNT(*) as count FROM inventory WHERE (expiry_date IS NOT NULL AND expiry_date != '' AND expiry_date < '${today}') OR (expiry IS NOT NULL AND expiry != '' AND expiry < '${today}');`);
       if (invRes[0]?.count > 0) {
-        newAlerts.push({ id: 2, type: 'warning', message: `يوجد ${invRes[0].count} أصناف في المخزون قاربت على النفاد`, date: 'تنبيه' });
+        // جعلت التنبيه من نوع danger باللون الأحمر ليعبر عن خطورة انتهاء الصلاحية
+        newAlerts.push({ id: 2, type: 'danger', message: `يوجد ${invRes[0].count} منتجات في المخزون انتهت صلاحيتها!`, date: 'تنبيه هام' });
       }
 
       setAlerts(newAlerts);
@@ -289,13 +290,13 @@ export default function App() {
         </View>
       </View>
 
-      {/* تذييل المطور مع تعديل اتجاه كلمة تطوير لتصبح قبل الاسم تماماً في اليسار */}
+      {/* التعديل هنا: استخدام النصوص المتداخلة لضمان الترتيب الصحيح 100% */}
       <View style={styles.footerContainer}>
         <Text style={styles.footerText}>نظام الميزان المحاسبي • الإصدار 1.0</Text>
-        <View style={styles.developerRow}>
-          <Text style={styles.developerTitle}>تطوير:</Text>
+        <Text style={styles.developerTextContainer}>
+          <Text style={styles.developerTitle}>تطوير: </Text>
           <Text style={styles.developerName}>سالم فهمي التريمي</Text>
-        </View>
+        </Text>
       </View>
       
     </ScrollView>
@@ -461,10 +462,11 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginBottom: 4,
   },
-  developerRow: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 6,
+  
+  // التعديلات الجديدة على التنسيقات للتذييل
+  developerTextContainer: {
+    textAlign: 'center',
+    marginTop: 2,
   },
   developerTitle: {
     fontSize: 13,
