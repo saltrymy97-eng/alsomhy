@@ -156,15 +156,22 @@ export default function App() {
         bankBalance: bankVal,
       });
 
-      // جلب التنبيهات والديون والمنتجات المنتهية
+      // جلب التنبيهات والديون والمنتجات المنتهية (متوافقة مع النظام المستمر للديون غير المسددة)
       const newAlerts = [];
       
-      const debtsRes = await db.getAll(`SELECT COUNT(*) as count FROM contacts_ledger WHERE amount_due > 0 AND due_date <= ?;`, [today]);
+      const debtsRes = await db.getAll(`
+        SELECT COUNT(*) as count 
+        FROM contacts_ledger 
+        WHERE COALESCE(status, 'pending') != 'paid' 
+        AND COALESCE(amount_due, amount) > 0 
+        AND COALESCE(due_date, date) <= ?;
+      `, [today]);
+
       if (debtsRes?.[0]?.count > 0) {
         newAlerts.push({ 
           id: 1, 
           type: 'danger', 
-          message: `يوجد ${debtsRes[0].count} جهات تعامل لديهم ديون مستحقة!`, 
+          message: `يوجد ${debtsRes[0].count} جهات تعامل لديهم ديون مستحقة حان وقت سدادها أو متأخرة!`, 
           date: 'عاجل' 
         });
       }
