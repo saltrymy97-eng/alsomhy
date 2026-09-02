@@ -1,4 +1,4 @@
-// db.js - تحديث معالجة المخرجات لمنع أخطاء الأنيميشن e is not a function
+// db.js - تحديث معالجة المخرجات وإصلاح خطأ duplicate column name
 
 const checkElectron = () => 
   typeof window !== 'undefined' && 
@@ -23,7 +23,6 @@ const sanitizeResults = (res) => {
     if (typeof row !== 'object' || row === null) return row;
     const cleanRow = { ...row };
     for (let key in cleanRow) {
-      // إذا كان الحقل يحتوي على null وهو عبارة عن مجموع/مبلغ، نحوله لـ 0
       if (cleanRow[key] === null) {
         cleanRow[key] = 0;
       }
@@ -193,14 +192,19 @@ export const initDB = async () => {
       );
     `);
 
+    // دالة محصنة لإضافة الأعمدة بدون أخطاء تكرار
     const ensureColumn = async (tableName, columnName, columnDef) => {
       try {
-        const tableInfo = await db.query(`PRAGMA table_info(${tableName});`);
-        const exists = tableInfo.some(col => col.name === columnName);
-        if (!exists) {
-          await db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef};`);
+        const tableInfo = await db.getAll(`PRAGMA table_info(${tableName});`);
+        if (Array.isArray(tableInfo)) {
+          const exists = tableInfo.some(col => col.name && col.name.toLowerCase() === columnName.toLowerCase());
+          if (!exists) {
+            await db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef};`);
+          }
         }
-      } catch (err) {}
+      } catch (err) {
+        // تجاهل الخطأ بأمان في حالة وجود العمود مسبقاً
+      }
     };
 
     await ensureColumn('sales', 'date', 'TEXT');
