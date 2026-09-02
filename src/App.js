@@ -34,13 +34,13 @@ const Glass3DIcon = ({ icon, gradientColor, borderColor, shadowColor, size = 64,
         Animated.timing(floatAnim, {
           toValue: -6,
           duration: 1500,
-          easing: Easing.inOut(Easing.ease), // تم الإصلاح هنا: استخدام Easing.ease بدلاً من sine
+          easing: Easing.inOut(Easing.ease),
           useNativeDriver: false,
         }),
         Animated.timing(floatAnim, {
           toValue: 0,
           duration: 1500,
-          easing: Easing.inOut(Easing.ease), // تم الإصلاح هنا
+          easing: Easing.inOut(Easing.ease),
           useNativeDriver: false,
         }),
       ])
@@ -135,28 +135,28 @@ export default function App() {
 
   const fetchDashboardStats = async () => {
     try {
-      // 1. حساب النقدية (الصندوق) بأمان
+      // 1. حساب رصيد الصندوق النقدي المباشر
       const cashRes = await db.getAll(`
         SELECT 
-          COALESCE(SUM(CASE WHEN transaction_type IN ('income', 'قبض', 'إيداع') THEN amount ELSE -amount END), 0) as balance 
+          SUM(CASE WHEN LOWER(transaction_type) IN ('income', 'قبض', 'إيداع') THEN amount ELSE -amount END) as balance 
         FROM treasury 
-        WHERE account_type LIKE '%صندوق%' OR account_type LIKE '%cash%' OR account_type = 'الصندوق';
+        WHERE account_type = 'الصندوق' OR LOWER(account_type) IN ('cash', 'صندوق', 'خزينة', 'نقدي');
       `);
 
-      // 2. حساب البنك بأمان
+      // 2. حساب رصيد الحساب البنكي المباشر
       const bankRes = await db.getAll(`
         SELECT 
-          COALESCE(SUM(CASE WHEN transaction_type IN ('income', 'قبض', 'إيداع') THEN amount ELSE -amount END), 0) as balance 
+          SUM(CASE WHEN LOWER(transaction_type) IN ('income', 'قبض', 'إيداع') THEN amount ELSE -amount END) as balance 
         FROM treasury 
-        WHERE account_type LIKE '%بنك%' OR account_type LIKE '%bank%' OR account_type = 'البنك';
+        WHERE account_type = 'البنك' OR LOWER(account_type) IN ('bank', 'بنك', 'حساب بنكي');
       `);
 
       const cashVal = Number(cashRes?.[0]?.balance || 0);
       const bankVal = Number(bankRes?.[0]?.balance || 0);
 
-      // 3. حساب صافي اليوم الفعلي
+      // 3. حساب صافي الحركة اليومية
       const today = new Date().toISOString().split('T')[0];
-      const logsRes = await db.getAll(`SELECT SUM(net_profit) as totalNet FROM daily_transactions WHERE date = '${today}';`);
+      const logsRes = await db.getAll(`SELECT SUM(net_profit) as totalNet FROM daily_transactions WHERE date = ?;`, [today]);
       const calculatedDailyNet = Number(logsRes?.[0]?.totalNet || 0);
 
       setStats({
@@ -165,10 +165,10 @@ export default function App() {
         bankBalance: bankVal,
       });
 
-      // 4. جلب التنبيهات الحقيقية
+      // 4. جلب التنبيهات والديون والمنتجات المنتهية
       const newAlerts = [];
       
-      const debtsRes = await db.getAll(`SELECT COUNT(*) as count FROM contacts_ledger WHERE amount_due > 0 AND due_date <= '${today}';`);
+      const debtsRes = await db.getAll(`SELECT COUNT(*) as count FROM contacts_ledger WHERE amount_due > 0 AND due_date <= ?;`, [today]);
       if (debtsRes?.[0]?.count > 0) {
         newAlerts.push({ 
           id: 1, 
@@ -181,9 +181,9 @@ export default function App() {
       const invRes = await db.getAll(`
         SELECT COUNT(*) as count 
         FROM inventory 
-        WHERE (expiry_date IS NOT NULL AND expiry_date != '' AND expiry_date <= '${today}')
-           OR (expiry IS NOT NULL AND expiry != '' AND expiry <= '${today}');
-      `);
+        WHERE (expiry_date IS NOT NULL AND expiry_date != '' AND expiry_date <= ?)
+           OR (expiry IS NOT NULL AND expiry != '' AND expiry <= ?);
+      `, [today, today]);
       
       if (invRes?.[0]?.count > 0) {
         newAlerts.push({ 
@@ -465,7 +465,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.65)', 
     borderTopLeftRadius: 100, borderTopRightRadius: 100 
   },
-  glassHighlightBottom: { 
+  glassBottomReflection: { 
     position: 'absolute', 
     bottom: '2%', left: '15%', right: '15%', 
     height: '25%', 
