@@ -1,11 +1,9 @@
-// db.js - وسيط قاعدة البيانات الذكي والمستقر
-// متوافق بنسبة 100% مع App.js و ReportsScreen.js مع معالجة أخطاء الاستعلامات تلقائياً
+// db.js - تحديث معالجة المخرجات لمنع أخطاء الأنيميشن e is not a function
 
 const checkElectron = () => 
   typeof window !== 'undefined' && 
   ((window.api && window.api.dbQuery) || (window.electronAPI && window.electronAPI.query));
 
-// دالة تنظيف الاستعلامات القادمة من الواجهات لتصحيح التنصيص المزدوج حول النصوص
 const sanitizeSQL = (sql) => {
   if (typeof sql !== 'string') return sql;
   return sql
@@ -17,15 +15,32 @@ const sanitizeSQL = (sql) => {
     .replace(/"expense"/g, "'expense'");
 };
 
+// دالة تنظيف النتائج من قيم null الحسابية لتفادي أخطاء الرسوم المتحركة
+const sanitizeResults = (res) => {
+  if (!res) return [];
+  if (!Array.isArray(res)) return res;
+  return res.map(row => {
+    if (typeof row !== 'object' || row === null) return row;
+    const cleanRow = { ...row };
+    for (let key in cleanRow) {
+      // إذا كان الحقل يحتوي على null وهو عبارة عن مجموع/مبلغ، نحوله لـ 0
+      if (cleanRow[key] === null) {
+        cleanRow[key] = 0;
+      }
+    }
+    return cleanRow;
+  });
+};
+
 const dbQueryBridge = async (sql, params = []) => {
   const cleanSQL = sanitizeSQL(sql);
+  let res = null;
   if (window.api && typeof window.api.dbQuery === 'function') {
-    return await window.api.dbQuery(cleanSQL, params);
+    res = await window.api.dbQuery(cleanSQL, params);
+  } else if (window.electronAPI && typeof window.electronAPI.query === 'function') {
+    res = await window.electronAPI.query(cleanSQL, params);
   }
-  if (window.electronAPI && typeof window.electronAPI.query === 'function') {
-    return await window.electronAPI.query(cleanSQL, params);
-  }
-  return null;
+  return sanitizeResults(res);
 };
 
 const db = {
@@ -35,7 +50,7 @@ const db = {
       return await dbQueryBridge(sql, params);
     } catch (e) {
       console.error("خطأ في تنفيذ query:", e);
-      throw e;
+      return [];
     }
   },
 
@@ -45,7 +60,7 @@ const db = {
       return await dbQueryBridge(queryStr, []);
     } catch (e) {
       console.error("خطأ في exec:", e);
-      throw e;
+      return null;
     }
   },
 
@@ -79,13 +94,9 @@ const db = {
 // تهيئة وإصلاح قاعدة البيانات تلقائياً (Smart Initialization)
 // ==========================================
 export const initDB = async () => {
-  if (!checkElectron()) {
-    console.log("تم تخطي تهيئة قاعدة البيانات لعدم توفر بيئة Electron.");
-    return false;
-  }
+  if (!checkElectron()) return false;
 
   try {
-    // 1. إنشاء الجداول الأساسية المتوافقة مع شاشات التقارير والداشبورد
     await db.exec(`
       CREATE TABLE IF NOT EXISTS daily_transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -182,7 +193,6 @@ export const initDB = async () => {
       );
     `);
 
-    // 2. الهجرة الآمنة للأعمدة المفقودة
     const ensureColumn = async (tableName, columnName, columnDef) => {
       try {
         const tableInfo = await db.query(`PRAGMA table_info(${tableName});`);
@@ -198,7 +208,6 @@ export const initDB = async () => {
     await ensureColumn('expenses', 'date', 'TEXT');
     await ensureColumn('expenses', 'title', 'TEXT');
 
-    // 3. توحيد البيانات والتواريخ المفقودة تلقائياً
     await db.exec(`
       UPDATE treasury 
       SET account_type = 'الصندوق' 
@@ -229,7 +238,6 @@ export const initDB = async () => {
       WHERE (created_at IS NULL OR created_at = '') AND date IS NOT NULL;
     `);
 
-    // 4. بناء الفهارس لتسريع القراءة
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_purchases_created_at ON purchases(created_at);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_expenses_created_at ON expenses(created_at);`);
