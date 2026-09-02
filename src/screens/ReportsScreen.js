@@ -40,21 +40,22 @@ export default function ReportsScreen() {
     try {
       setLoading(true);
 
-      await db.query(`
+      // 1. ضمان وجود الجداول الأساسية
+      await db.run(`
         CREATE TABLE IF NOT EXISTS sales (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           total_amount REAL NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
       `);
-      await db.query(`
+      await db.run(`
         CREATE TABLE IF NOT EXISTS purchases (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           total_amount REAL NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
       `);
-      await db.query(`
+      await db.run(`
         CREATE TABLE IF NOT EXISTS expenses (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           amount REAL NOT NULL,
@@ -63,28 +64,34 @@ export default function ReportsScreen() {
         );
       `);
 
-      // جلب المجاميع المفلترة بحسب الشهر المختار
       const monthPattern = `${selectedMonth}%`;
 
-      const salesRes = await db.query('SELECT SUM(total_amount) as total FROM sales WHERE created_at LIKE ?;', [monthPattern]);
-      const purchasesRes = await db.query('SELECT SUM(total_amount) as total FROM purchases WHERE created_at LIKE ?;', [monthPattern]);
-      const expensesRes = await db.query('SELECT SUM(amount) as total FROM expenses WHERE created_at LIKE ?;', [monthPattern]);
+      // 2. جلب المبيعات المباشرة وحركات اليومية
+      const salesRes = await db.getAll('SELECT SUM(total_amount) as total FROM sales WHERE created_at LIKE ?;', [monthPattern]);
+      const dailySalesRes = await db.getAll('SELECT SUM(total_sales) as total FROM daily_transactions WHERE date LIKE ?;', [monthPattern]);
+      
+      // 3. جلب المشتريات والمصروفات
+      const purchasesRes = await db.getAll('SELECT SUM(total_amount) as total FROM purchases WHERE created_at LIKE ?;', [monthPattern]);
+      const expensesRes = await db.getAll('SELECT SUM(amount) as total FROM expenses WHERE created_at LIKE ?;', [monthPattern]);
+      const treasuryExpensesRes = await db.getAll("SELECT SUM(amount) as total FROM treasury WHERE transaction_type IN ('expense', 'صرف', 'سحب') AND date LIKE ?;", [monthPattern]);
 
-      const monthlySales = salesRes?.[0]?.total || 0;
-      const monthlyPurchases = purchasesRes?.[0]?.total || 0;
-      const monthlyExpenses = expensesRes?.[0]?.total || 0;
+      const monthlySales = Number(salesRes?.[0]?.total || 0) + Number(dailySalesRes?.[0]?.total || 0);
+      const monthlyPurchases = Number(purchasesRes?.[0]?.total || 0);
+      const monthlyExpenses = Number(expensesRes?.[0]?.total || 0) + Number(treasuryExpensesRes?.[0]?.total || 0);
       const monthlyNetIncome = monthlySales - (monthlyPurchases + monthlyExpenses);
 
-      // جلب التفاصيل المفلترة للشهر المختار
-      const monthSales = (await db.query('SELECT id, total_amount, created_at FROM sales WHERE created_at LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
-      const monthPurchases = (await db.query('SELECT id, total_amount, created_at FROM purchases WHERE created_at LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
-      const monthExpenses = (await db.query('SELECT id, amount, description, created_at FROM expenses WHERE created_at LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
+      // 4. جلب التفاصيل المفلترة للشهر المختار
+      const monthSales = (await db.getAll('SELECT id, total_amount, created_at FROM sales WHERE created_at LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
+      const monthDaily = (await db.getAll('SELECT id, total_sales, net_profit, date FROM daily_transactions WHERE date LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
+      const monthPurchases = (await db.getAll('SELECT id, total_amount, created_at FROM purchases WHERE created_at LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
+      const monthExpenses = (await db.getAll('SELECT id, amount, description, created_at FROM expenses WHERE created_at LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
 
       const formattedDetails = [
-        ...monthSales.map(s => ({ البند: 'مبيعات', المبلغ: s.total_amount, البيان: 'إيراد مبيعات', التاريخ: s.created_at })),
-        ...monthPurchases.map(p => ({ البند: 'مشتريات', المبلغ: p.total_amount, البيان: 'شراء بضاعة', التاريخ: p.created_at })),
-        ...monthExpenses.map(e => ({ البند: 'مصروفات', المبلغ: e.amount, البيان: e.description || 'مصروفات تشغيلية', التاريخ: e.created_at })),
-      ].sort((a, b) => new Date(b.التاريخ) - new Date(a.التاريخ));
+        ...monthSales.map(s => ({ البند: 'مبيعات', المبلغ: Number(s.total_amount || 0), البيان: 'فاتورة مبيعات', التاريخ: s.created_at })),
+        ...monthDaily.map(d => ({ البند: 'مبيعات', المبلغ: Number(d.total_sales || 0), البيان: 'حركة يومية', التاريخ: d.date })),
+        ...monthPurchases.map(p => ({ البند: 'مشتريات', المبلغ: Number(p.total_amount || 0), البيان: 'شراء بضاعة', التاريخ: p.created_at })),
+        ...monthExpenses.map(e => ({ البند: 'مصروفات', المبلغ: Number(e.amount || 0), البيان: e.description || 'مصروفات تشغيلية', التاريخ: e.created_at })),
+      ].sort((a, b) => new Date(b.التاريخ || 0) - new Date(a.التاريخ || 0));
 
       setReportDetails(formattedDetails);
       setFinancialData({
@@ -101,7 +108,7 @@ export default function ReportsScreen() {
     }
   };
 
-  // تصدير البيانات المفلترة لشهر معين إلى Excel
+  // تصدير البيانات إلى Excel
   const handleExportToExcel = () => {
     if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
       Alert.alert('تنبيه', 'لا توجد بيانات مالية مسجلة لهذا الشهر لتصديرها.');
@@ -319,7 +326,7 @@ export default function ReportsScreen() {
                 onPress={handleExportToHTML}
                 activeOpacity={0.8}
               >
-                <Text style={styles.exportButtonText}>طباعة / Txt HTML</Text>
+                <Text style={styles.exportButtonText}>طباعة / HTML</Text>
               </TouchableOpacity>
             </View>
           </View>
