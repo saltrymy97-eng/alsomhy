@@ -19,11 +19,13 @@ export default function InventoryScreen() {
   const [quantity, setQuantity] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [minAlert, setMinAlert] = useState('');
-  const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10)); // تاريخ الإدخال
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10)); 
   
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [inventoryList, setInventoryList] = useState([]);
-  const [lowStockCount, setLowStockCount] = useState(0);
+  
+  // تغيير المتغير ليعبر عن المنتجات منتهية الصلاحية
+  const [expiredCount, setExpiredCount] = useState(0);
 
   useEffect(() => {
     initTableAndFetch();
@@ -37,7 +39,6 @@ export default function InventoryScreen() {
 
   const initTableAndFetch = async () => {
     try {
-      // إنشاء الجدول متوافقاً مع الهيكل الموحد في db.js
       await db.query(`
         CREATE TABLE IF NOT EXISTS inventory (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,14 +72,13 @@ export default function InventoryScreen() {
       const data = results || [];
       setInventoryList(data);
 
-      // حساب عدد المنتجات التي وصلت لحد التنبيه
-      const lowStock = data.filter(item => {
-        const q = item.quantity !== undefined ? item.quantity : item.qty;
-        const m = item.min_alert_quantity !== undefined ? item.min_alert_quantity : item.minAlert;
-        return q <= m;
+      // التعديل هنا: حساب عدد المنتجات التي انتهت صلاحيتها بدلاً من نقص المخزون
+      const expiredItems = data.filter(item => {
+        const exp = item.expiry_date || item.expiry;
+        return exp ? new Date(exp) < new Date() : false;
       }).length;
 
-      setLowStockCount(lowStock);
+      setExpiredCount(expiredItems);
     } catch (error) {
       console.error('خطأ في جلب بيانات المخزون:', error);
     }
@@ -94,7 +94,6 @@ export default function InventoryScreen() {
       const numQty = parseFloat(quantity) || 0;
       const numMinAlert = parseFloat(minAlert) || 0;
 
-      // الإدخال بالأسماء الموحدة (name, product_name, quantity, qty, expiry, minAlert...) لتجنب أي تضارب
       await db.query(
         `INSERT INTO inventory (name, product_name, quantity, qty, expiry_date, expiry, min_alert_quantity, minAlert, entry_date) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
@@ -164,7 +163,6 @@ export default function InventoryScreen() {
         style={{ flex: 1 }} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        {/* شريط اختيار وتنقل الشهر المفلتر */}
         <View style={styles.monthSelectorBar}>
           <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
             <Text style={styles.monthNavText}>▶</Text>
@@ -180,15 +178,14 @@ export default function InventoryScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ملخص المخزون للشهر */}
+        {/* التعديل هنا: واجهة ملخص الصلاحيات */}
         <View style={styles.summaryBar}>
-          <Text style={styles.summaryLabel}>تنبيهات نقص المخزون لهذا الشهر:</Text>
-          <Text style={[styles.summaryValue, lowStockCount > 0 ? styles.textWarning : styles.textSuccess]}>
-            {lowStockCount} منتجات
+          <Text style={styles.summaryLabel}>المنتجات منتهية الصلاحية:</Text>
+          <Text style={[styles.summaryValue, expiredCount > 0 ? styles.textDanger : styles.textSuccess]}>
+            {expiredCount} منتجات
           </Text>
         </View>
 
-        {/* قسم إدخال منتج جديد */}
         <View style={styles.inputSection}>
           <Text style={styles.sectionTitle}>تسجيل بضاعة جديدة</Text>
           
@@ -253,7 +250,6 @@ export default function InventoryScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* قسم قائمة المخزون */}
         <View style={styles.listSection}>
           <Text style={styles.sectionTitle}>قائمة المخزون ({selectedMonth})</Text>
           <FlatList
