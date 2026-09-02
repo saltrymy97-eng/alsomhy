@@ -17,24 +17,17 @@ export default function ContactsScreen() {
   const [name, setName] = useState('');
   const [amountDue, setAmountDue] = useState('');
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [contactsList, setContactsList] = useState([]);
-  const [monthTotal, setMonthTotal] = useState(0);
+  const [totalAmount, setTotalAmount] = useState(0);
 
   useEffect(() => {
     initTableAndFetch();
-  }, [activeTab, selectedMonth]);
-
-  const changeMonth = (delta) => {
-    const [year, month] = selectedMonth.split('-').map(Number);
-    const date = new Date(year, month - 1 + delta, 1);
-    const newMonthStr = date.toISOString().slice(0, 7);
-    setSelectedMonth(newMonthStr);
-  };
+  }, [activeTab]);
 
   const initTableAndFetch = async () => {
     try {
-      await db.query(`
+      // إنشاء الجدول إذا لم يكن موجوداً
+      await db.run(`
         CREATE TABLE IF NOT EXISTS contacts_ledger (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
@@ -48,6 +41,17 @@ export default function ContactsScreen() {
           created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
       `);
+
+      // التأكد من وجود عمود status في الجداول القديمة
+      const columns = await db.getAll(`PRAGMA table_info(contacts_ledger);`);
+      const hasStatus = columns.some(column => column.name === 'status');
+
+      if (!hasStatus) {
+        await db.run(
+          `ALTER TABLE contacts_ledger ADD COLUMN status TEXT DEFAULT 'pending';`
+        );
+      }
+
       await fetchContacts();
     } catch (error) {
       console.error('خطأ في تهيئة جدول الديون والمستحقات:', error);
@@ -56,29 +60,26 @@ export default function ContactsScreen() {
 
   const fetchContacts = async () => {
     try {
-      // 💡 تعديل جوهري: جلب ديون الشهر الحالي + كافة الديون المتأخرة غير المسددة (<= selectedMonth)
-      const results = await db.query(
+      // جلب جميع الديون غير المسددة مهما كان تاريخ الاستحقاق (لا تختفي بمرور الشهر)
+      const results = await db.getAll(
         `SELECT * FROM contacts_ledger 
          WHERE (type = ? OR contact_type = ?) 
          AND COALESCE(status, 'pending') != 'paid' 
-         AND strftime('%Y-%m', COALESCE(due_date, date)) <= ? 
          ORDER BY COALESCE(due_date, date) ASC;`,
-        [activeTab, activeTab, selectedMonth]
+        [activeTab, activeTab]
       );
       setContactsList(results || []);
 
-      // حساب المجموع الكلي مع استبعاد المسدد وتضمين المتأخرات
-      const totalResult = await db.query(
+      // حساب إجمالي جميع الديون غير المسددة
+      const totalResult = await db.getAll(
         `SELECT COALESCE(SUM(COALESCE(amount_due, amount)), 0) as total 
          FROM contacts_ledger 
          WHERE (type = ? OR contact_type = ?) 
-         AND COALESCE(status, 'pending') != 'paid' 
-         AND strftime('%Y-%m', COALESCE(due_date, date)) <= ?;`,
-        [activeTab, activeTab, selectedMonth]
+         AND COALESCE(status, 'pending') != 'paid';`,
+        [activeTab, activeTab]
       );
-      if (totalResult && totalResult[0]) {
-        setMonthTotal(totalResult[0].total || 0);
-      }
+      
+      setTotalAmount(Number(totalResult?.[0]?.total || 0));
     } catch (error) {
       console.error('خطأ في جلب السجلات:', error);
     }
@@ -93,7 +94,7 @@ export default function ContactsScreen() {
     try {
       const numAmount = parseFloat(amountDue) || 0;
       
-      await db.query(
+      await db.run(
         `INSERT INTO contacts_ledger (name, contact_type, type, amount_due, amount, due_date, date, status) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
         [name, activeTab, activeTab, numAmount, numAmount, dueDate, dueDate, 'pending']
@@ -102,14 +103,13 @@ export default function ContactsScreen() {
       setName('');
       setAmountDue('');
       await fetchContacts();
-      Alert.alert('نجاح', 'تم تسجيل السجل بنجاح.');
+      Alert.alert('نجاح', 'تم تسجيل وحفظ الدين بنجاح.');
     } catch (error) {
       console.error('خطأ في حفظ السجل:', error);
       Alert.alert('خطأ', 'فشل حفظ السجل في قاعدة البيانات.');
     }
   };
 
-  // 💡 إضافة دالة السداد الجديدة
   const handleMarkAsPaid = (item) => {
     Alert.alert(
       'تأكيد السداد',
@@ -120,13 +120,12 @@ export default function ContactsScreen() {
           text: 'نعم، تم السداد', 
           onPress: async () => {
             try {
-              // تحويل الحالة إلى مدفوع بدلاً من الحذف
-              await db.query(
+              await db.run(
                 `UPDATE contacts_ledger SET status = 'paid' WHERE id = ?;`,
                 [item.id]
               );
               await fetchContacts(); 
-              Alert.alert('تم', 'تم تسجيل السداد بنجاح وإخفاء السجل.');
+              Alert.alert('تم', 'تم تسجيل السداد وإخفاء السجل بنجاح.');
             } catch (error) {
               console.error('خطأ في تسجيل السداد:', error);
               Alert.alert('خطأ', 'فشل تسجيل السداد.');
@@ -179,14 +178,13 @@ export default function ContactsScreen() {
           </View>
         )}
 
-        {/* 💡 زر السداد الجديد */}
         <TouchableOpacity 
           style={styles.paidButton} 
           onPress={() => handleMarkAsPaid(item)}
+          activeOpacity={0.8}
         >
           <Text style={styles.paidButtonText}>✓ تم السداد</Text>
         </TouchableOpacity>
-
       </View>
     );
   };
@@ -196,21 +194,7 @@ export default function ContactsScreen() {
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.monthSelectorBar}>
-        <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
-          <Text style={styles.monthNavText}>▶</Text>
-        </TouchableOpacity>
-
-        <View style={styles.monthDisplayContainer}>
-          <Text style={styles.monthLabelText}>تصفية حتى شهر:</Text>
-          <Text style={styles.monthValueText}>{selectedMonth}</Text>
-        </View>
-
-        <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(1)}>
-          <Text style={styles.monthNavText}>◀</Text>
-        </TouchableOpacity>
-      </View>
-
+      {/* شريط التبديل بين العملاء والموردين */}
       <View style={styles.tabContainer}>
         <TouchableOpacity 
           style={[styles.tabButton, activeTab === 'customer' && styles.activeTabBlue]} 
@@ -227,15 +211,17 @@ export default function ContactsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* ملخص الإجمالي العام غير المسدد */}
       <View style={styles.summaryBar}>
         <Text style={styles.summaryLabel}>
-          إجمالي {activeTab === 'customer' ? 'ديون العملاء' : 'مستحقات الموردين'} لشهـر {selectedMonth}:
+          إجمالي {activeTab === 'customer' ? 'ديون العملاء غير المسددة' : 'مستحقات الموردين غير المسددة'}:
         </Text>
         <Text style={[styles.summaryValue, activeTab === 'customer' ? styles.textBlue : styles.textPurple]}>
-          {monthTotal.toLocaleString()} ر.ي
+          {totalAmount.toLocaleString()} ر.ي
         </Text>
       </View>
 
+      {/* قسم الإدخال */}
       <View style={styles.inputSection}>
         <Text style={styles.sectionTitle}>
           {activeTab === 'customer' ? 'إضافة دين جديد على عميل' : 'إضافة مستحق جديد لمورد'}
@@ -278,16 +264,17 @@ export default function ContactsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* قائمة العرض */}
       <View style={styles.listSection}>
         <Text style={styles.sectionTitle}>
-          {activeTab === 'customer' ? 'قائمة ديون العملاء' : 'قائمة مستحقات الموردين'}
+          {activeTab === 'customer' ? 'قائمة ديون العملاء المعلقة' : 'قائمة مستحقات الموردين المعلقة'}
         </Text>
         <FlatList
           data={contactsList}
           keyExtractor={item => item.id.toString()}
           renderItem={renderContactItem}
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<Text style={styles.emptyText}>جميع الحسابات مصفرة أو لا توجد سجلات.</Text>}
+          ListEmptyComponent={<Text style={styles.emptyText}>لا توجد ديون معلقة، كل الحسابات مسددة ✅</Text>}
         />
       </View>
     </KeyboardAvoidingView>
@@ -296,28 +283,6 @@ export default function ContactsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
-  monthSelectorBar: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  monthNavBtn: {
-    backgroundColor: '#F1F5F9',
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  monthNavText: { fontSize: 14, color: '#334155', fontWeight: 'bold' },
-  monthDisplayContainer: { alignItems: 'center' },
-  monthLabelText: { fontSize: 11, color: '#64748B', fontWeight: '600' },
-  monthValueText: { fontSize: 15, color: '#0F172A', fontWeight: 'bold' },
 
   tabContainer: {
     flexDirection: 'row-reverse',
@@ -457,9 +422,8 @@ const styles = StyleSheet.create({
   },
   overdueBannerText: { fontSize: 11, color: '#DC2626', fontWeight: 'bold' },
 
-  // 💡 تنسيق زر السداد الجديد
   paidButton: {
-    marginTop: 12,
+    marginTop: 10,
     backgroundColor: '#10B981',
     paddingVertical: 9,
     borderRadius: 8,
