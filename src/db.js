@@ -144,7 +144,7 @@ export const initDB = async () => {
   }
 
   try {
-    // 1. جدول السجل اليومي (مبيعات، مشتريات، أرباح، مع دعم entry_date و date و description)
+    // 1. جدول السجل اليومي 
     await db.exec(`
       CREATE TABLE IF NOT EXISTS daily_transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,11 +156,12 @@ export const initDB = async () => {
         total_purchases REAL DEFAULT 0,
         total_sales REAL DEFAULT 0,
         net_profit REAL DEFAULT 0,
+        income REAL DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    // 2. جدول المبيعات المستقل (للتقارير)
+    // 2. جدول المبيعات المستقل 
     await db.exec(`
       CREATE TABLE IF NOT EXISTS sales (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,7 +171,7 @@ export const initDB = async () => {
       );
     `);
 
-    // 3. جدول المشتريات المستقل (للتقارير)
+    // 3. جدول المشتريات المستقل 
     await db.exec(`
       CREATE TABLE IF NOT EXISTS purchases (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -180,7 +181,7 @@ export const initDB = async () => {
       );
     `);
 
-    // 4. جدول المخزون (شامل كافة الاحتمالات: name, product_name, quantity, qty, min_alert_quantity, minAlert, entry_date)
+    // 4. جدول المخزون 
     await db.exec(`
       CREATE TABLE IF NOT EXISTS inventory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -210,11 +211,12 @@ export const initDB = async () => {
         time TEXT,
         notes TEXT,
         description TEXT,
+        income REAL DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    // 6. جدول العملاء والموردين (Contacts Ledger)
+    // 6. جدول العملاء والموردين 
     await db.exec(`
       CREATE TABLE IF NOT EXISTS contacts_ledger (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -258,6 +260,10 @@ export const initDB = async () => {
         // تجاهل الخطأ في حال دعم الجدول مسبقاً
       }
     };
+
+    // إضافة عمود الدخل (income) لتفادي الأخطاء في الداشبورد والتقارير
+    await ensureColumn('daily_transactions', 'income', 'REAL DEFAULT 0');
+    await ensureColumn('treasury', 'income', 'REAL DEFAULT 0');
 
     await ensureColumn('daily_transactions', 'entry_date', 'TEXT');
     await ensureColumn('daily_transactions', 'date', 'TEXT');
