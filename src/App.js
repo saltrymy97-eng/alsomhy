@@ -34,14 +34,14 @@ const Glass3DIcon = ({ icon, gradientColor, borderColor, shadowColor, size = 64,
         Animated.timing(floatAnim, {
           toValue: -6,
           duration: 1500,
-          easing: Easing.inOut(Easing.sine),
-          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease), // تم الإصلاح هنا: استخدام Easing.ease بدلاً من sine
+          useNativeDriver: false,
         }),
         Animated.timing(floatAnim, {
           toValue: 0,
           duration: 1500,
-          easing: Easing.inOut(Easing.sine),
-          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease), // تم الإصلاح هنا
+          useNativeDriver: false,
         }),
       ])
     ).start();
@@ -51,12 +51,12 @@ const Glass3DIcon = ({ icon, gradientColor, borderColor, shadowColor, size = 64,
         Animated.timing(pulseAnim, {
           toValue: 1.1, 
           duration: 1300,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
         Animated.timing(pulseAnim, {
           toValue: 1,
           duration: 1300,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
       ])
     ).start();
@@ -165,10 +165,9 @@ export default function App() {
         bankBalance: bankVal,
       });
 
-      // 4. جلب التنبيهات الحقيقية (الديون وانتهاء الصلاحية)
+      // 4. جلب التنبيهات الحقيقية
       const newAlerts = [];
       
-      // أ) تنبيهات الديون المستحقة
       const debtsRes = await db.getAll(`SELECT COUNT(*) as count FROM contacts_ledger WHERE amount_due > 0 AND due_date <= '${today}';`);
       if (debtsRes?.[0]?.count > 0) {
         newAlerts.push({ 
@@ -179,7 +178,6 @@ export default function App() {
         });
       }
 
-      // ب) تنبيهات انتهاء صلاحية المنتجات في المخزون
       const invRes = await db.getAll(`
         SELECT COUNT(*) as count 
         FROM inventory 
@@ -467,7 +465,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.65)', 
     borderTopLeftRadius: 100, borderTopRightRadius: 100 
   },
-  glassBottomReflection: { 
+  glassHighlightBottom: { 
     position: 'absolute', 
     bottom: '2%', left: '15%', right: '15%', 
     height: '25%', 
