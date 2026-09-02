@@ -126,7 +126,7 @@ export default function App() {
       await initDB();
       const treasuryCheck = await db.getAll('SELECT * FROM treasury LIMIT 1;');
       if (!treasuryCheck || treasuryCheck.length === 0) {
-        await db.run('INSERT INTO treasury (account_type, transaction_type, amount, date) VALUES (?, ?, ?, ?);', ['الصندوق', 'income', 0, new Date().toISOString().split('T')[0]]);
+        await db.run("INSERT INTO treasury (account_type, transaction_type, amount, date) VALUES ('الصندوق', 'income', 0, ?);", [new Date().toISOString().split('T')[0]]);
       }
     } catch (error) {
       console.error('خطأ في تهيئة قاعدة البيانات:', error);
@@ -135,40 +135,65 @@ export default function App() {
 
   const fetchDashboardStats = async () => {
     try {
-      // 1. حساب أرصدة الخزينة
-      const treasuryRes = await db.getAll('SELECT account_type, SUM(CASE WHEN transaction_type IN ("income", "قبض") THEN amount ELSE -amount END) as balance FROM treasury GROUP BY account_type;');
-      let cash = 0;
-      let bank = 0;
-      if (treasuryRes && treasuryRes.length > 0) {
-        treasuryRes.forEach(item => {
-          if (item.account_type === 'الصندوق' || item.account_type === 'cash') cash += item.balance || 0;
-          if (item.account_type === 'البنك' || item.account_type === 'bank') bank += item.balance || 0;
-        });
-      }
+      // 1. حساب النقدية (الصندوق) بأمان
+      const cashRes = await db.getAll(`
+        SELECT 
+          COALESCE(SUM(CASE WHEN transaction_type IN ('income', 'قبض', 'إيداع') THEN amount ELSE -amount END), 0) as balance 
+        FROM treasury 
+        WHERE account_type LIKE '%صندوق%' OR account_type LIKE '%cash%' OR account_type = 'الصندوق';
+      `);
 
-      // 2. حساب صافي اليوم الفعلي
+      // 2. حساب البنك بأمان
+      const bankRes = await db.getAll(`
+        SELECT 
+          COALESCE(SUM(CASE WHEN transaction_type IN ('income', 'قبض', 'إيداع') THEN amount ELSE -amount END), 0) as balance 
+        FROM treasury 
+        WHERE account_type LIKE '%بنك%' OR account_type LIKE '%bank%' OR account_type = 'البنك';
+      `);
+
+      const cashVal = Number(cashRes?.[0]?.balance || 0);
+      const bankVal = Number(bankRes?.[0]?.balance || 0);
+
+      // 3. حساب صافي اليوم الفعلي
       const today = new Date().toISOString().split('T')[0];
       const logsRes = await db.getAll(`SELECT SUM(net_profit) as totalNet FROM daily_transactions WHERE date = '${today}';`);
-      const calculatedDailyNet = logsRes && logsRes[0] ? logsRes[0].totalNet || 0 : 0;
+      const calculatedDailyNet = Number(logsRes?.[0]?.totalNet || 0);
 
       setStats({
         dailyNet: calculatedDailyNet,
-        cashBalance: cash,
-        bankBalance: bank,
+        cashBalance: cashVal,
+        bankBalance: bankVal,
       });
 
-      // 3. جلب التنبيهات الحقيقية
+      // 4. جلب التنبيهات الحقيقية (الديون وانتهاء الصلاحية)
       const newAlerts = [];
+      
+      // أ) تنبيهات الديون المستحقة
       const debtsRes = await db.getAll(`SELECT COUNT(*) as count FROM contacts_ledger WHERE amount_due > 0 AND due_date <= '${today}';`);
-      if (debtsRes[0]?.count > 0) {
-        newAlerts.push({ id: 1, type: 'danger', message: `يوجد ${debtsRes[0].count} جهات تعامل لديهم ديون مستحقة!`, date: 'عاجل' });
+      if (debtsRes?.[0]?.count > 0) {
+        newAlerts.push({ 
+          id: 1, 
+          type: 'danger', 
+          message: `يوجد ${debtsRes[0].count} جهات تعامل لديهم ديون مستحقة!`, 
+          date: 'عاجل' 
+        });
       }
 
-      // التعديل هنا: فحص المنتجات التي انتهت صلاحيتها فقط (بدلاً من الكميات)
-      const invRes = await db.getAll(`SELECT COUNT(*) as count FROM inventory WHERE (expiry_date IS NOT NULL AND expiry_date != '' AND expiry_date < '${today}') OR (expiry IS NOT NULL AND expiry != '' AND expiry < '${today}');`);
-      if (invRes[0]?.count > 0) {
-        // جعلت التنبيه من نوع danger باللون الأحمر ليعبر عن خطورة انتهاء الصلاحية
-        newAlerts.push({ id: 2, type: 'danger', message: `يوجد ${invRes[0].count} منتجات في المخزون انتهت صلاحيتها!`, date: 'تنبيه هام' });
+      // ب) تنبيهات انتهاء صلاحية المنتجات في المخزون
+      const invRes = await db.getAll(`
+        SELECT COUNT(*) as count 
+        FROM inventory 
+        WHERE (expiry_date IS NOT NULL AND expiry_date != '' AND expiry_date <= '${today}')
+           OR (expiry IS NOT NULL AND expiry != '' AND expiry <= '${today}');
+      `);
+      
+      if (invRes?.[0]?.count > 0) {
+        newAlerts.push({ 
+          id: 2, 
+          type: 'danger', 
+          message: `تنبيه: يوجد ${invRes[0].count} منتجات انتهت صلاحيتها أو تنتهي اليوم!`, 
+          date: 'تنبيه هام' 
+        });
       }
 
       setAlerts(newAlerts);
@@ -189,23 +214,26 @@ export default function App() {
     }
   };
 
-  const StatCard = ({ title, amount, color, icon, bgGlow, borderColor }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Glass3DIcon 
-          icon={icon} 
-          gradientColor={bgGlow} 
-          borderColor={borderColor} 
-          shadowColor={color} 
-          size={50} 
-        />
-        <Text style={styles.cardTitle}>{title}</Text>
+  const StatCard = ({ title, amount, color, icon, bgGlow, borderColor }) => {
+    const safeAmount = Number(amount || 0);
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Glass3DIcon 
+            icon={icon} 
+            gradientColor={bgGlow} 
+            borderColor={borderColor} 
+            shadowColor={color} 
+            size={50} 
+          />
+          <Text style={styles.cardTitle}>{title}</Text>
+        </View>
+        <Text style={[styles.cardAmount, { color: color }]}>
+          {safeAmount.toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
+        </Text>
       </View>
-      <Text style={[styles.cardAmount, { color: color }]}>
-        {amount.toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
-      </Text>
-    </View>
-  );
+    );
+  };
 
   const AlertCard = ({ type, message, date }) => {
     const isDanger = type === 'danger';
@@ -290,7 +318,6 @@ export default function App() {
         </View>
       </View>
 
-      {/* التعديل هنا: استخدام النصوص المتداخلة لضمان الترتيب الصحيح 100% */}
       <View style={styles.footerContainer}>
         <Text style={styles.footerText}>نظام الميزان المحاسبي • الإصدار 1.0</Text>
         <Text style={styles.developerTextContainer}>
@@ -462,8 +489,6 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginBottom: 4,
   },
-  
-  // التعديلات الجديدة على التنسيقات للتذييل
   developerTextContainer: {
     textAlign: 'center',
     marginTop: 2,
