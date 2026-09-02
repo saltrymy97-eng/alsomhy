@@ -67,28 +67,34 @@ export default function ReportsScreen() {
       const monthPattern = `${selectedMonth}%`;
 
       // 2. جلب المبيعات المباشرة وحركات اليومية
-      const salesRes = await db.getAll('SELECT SUM(total_amount) as total FROM sales WHERE created_at LIKE ?;', [monthPattern]);
+      const salesRes = await db.getAll('SELECT SUM(total_amount) as total FROM sales WHERE created_at LIKE ? OR date LIKE ?;', [monthPattern, monthPattern]);
       const dailySalesRes = await db.getAll('SELECT SUM(total_sales) as total FROM daily_transactions WHERE date LIKE ?;', [monthPattern]);
       
-      // 3. جلب المشتريات والمصروفات
-      const purchasesRes = await db.getAll('SELECT SUM(total_amount) as total FROM purchases WHERE created_at LIKE ?;', [monthPattern]);
-      const expensesRes = await db.getAll('SELECT SUM(amount) as total FROM expenses WHERE created_at LIKE ?;', [monthPattern]);
+      // 3. جلب المشتريات المباشرة ومشتريات حركة اليومية (تم إصلاحها لاحتساب المشتريات بدقة)
+      const purchasesRes = await db.getAll('SELECT SUM(total_amount) as total FROM purchases WHERE created_at LIKE ? OR date LIKE ?;', [monthPattern, monthPattern]);
+      const dailyPurchasesRes = await db.getAll('SELECT SUM(total_purchases) as total FROM daily_transactions WHERE date LIKE ?;', [monthPattern]);
+
+      // 4. جلب المصروفات وسحوبات الخزينة التشغيلية
+      const expensesRes = await db.getAll('SELECT SUM(amount) as total FROM expenses WHERE created_at LIKE ? OR date LIKE ?;', [monthPattern, monthPattern]);
       const treasuryExpensesRes = await db.getAll("SELECT SUM(amount) as total FROM treasury WHERE transaction_type IN ('expense', 'صرف', 'سحب') AND date LIKE ?;", [monthPattern]);
 
       const monthlySales = Number(salesRes?.[0]?.total || 0) + Number(dailySalesRes?.[0]?.total || 0);
-      const monthlyPurchases = Number(purchasesRes?.[0]?.total || 0);
+      const monthlyPurchases = Number(purchasesRes?.[0]?.total || 0) + Number(dailyPurchasesRes?.[0]?.total || 0);
       const monthlyExpenses = Number(expensesRes?.[0]?.total || 0) + Number(treasuryExpensesRes?.[0]?.total || 0);
+      
+      // صافي الدخل الشهري الصحيح = المبيعات - (المشتريات + المصروفات)
       const monthlyNetIncome = monthlySales - (monthlyPurchases + monthlyExpenses);
 
-      // 4. جلب التفاصيل المفلترة للشهر المختار
-      const monthSales = (await db.getAll('SELECT id, total_amount, created_at FROM sales WHERE created_at LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
-      const monthDaily = (await db.getAll('SELECT id, total_sales, net_profit, date FROM daily_transactions WHERE date LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
-      const monthPurchases = (await db.getAll('SELECT id, total_amount, created_at FROM purchases WHERE created_at LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
-      const monthExpenses = (await db.getAll('SELECT id, amount, description, created_at FROM expenses WHERE created_at LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
+      // 5. جلب التفاصيل المفلترة للشهر المختار لعرضها في السجل
+      const monthSales = (await db.getAll('SELECT id, total_amount, created_at FROM sales WHERE created_at LIKE ? OR date LIKE ? ORDER BY id DESC;', [monthPattern, monthPattern])) || [];
+      const monthDaily = (await db.getAll('SELECT id, total_sales, total_purchases, net_profit, date FROM daily_transactions WHERE date LIKE ? ORDER BY id DESC;', [monthPattern])) || [];
+      const monthPurchases = (await db.getAll('SELECT id, total_amount, created_at FROM purchases WHERE created_at LIKE ? OR date LIKE ? ORDER BY id DESC;', [monthPattern, monthPattern])) || [];
+      const monthExpenses = (await db.getAll('SELECT id, amount, description, created_at FROM expenses WHERE created_at LIKE ? OR date LIKE ? ORDER BY id DESC;', [monthPattern, monthPattern])) || [];
 
       const formattedDetails = [
         ...monthSales.map(s => ({ البند: 'مبيعات', المبلغ: Number(s.total_amount || 0), البيان: 'فاتورة مبيعات', التاريخ: s.created_at })),
-        ...monthDaily.map(d => ({ البند: 'مبيعات', المبلغ: Number(d.total_sales || 0), البيان: 'حركة يومية', التاريخ: d.date })),
+        ...monthDaily.filter(d => Number(d.total_sales) > 0).map(d => ({ البند: 'مبيعات', المبلغ: Number(d.total_sales || 0), البيان: 'حركة يومية (مبيعات)', التاريخ: d.date })),
+        ...monthDaily.filter(d => Number(d.total_purchases) > 0).map(d => ({ البند: 'مشتريات', المبلغ: Number(d.total_purchases || 0), البيان: 'حركة يومية (مشتريات)', التاريخ: d.date })),
         ...monthPurchases.map(p => ({ البند: 'مشتريات', المبلغ: Number(p.total_amount || 0), البيان: 'شراء بضاعة', التاريخ: p.created_at })),
         ...monthExpenses.map(e => ({ البند: 'مصروفات', المبلغ: Number(e.amount || 0), البيان: e.description || 'مصروفات تشغيلية', التاريخ: e.created_at })),
       ].sort((a, b) => new Date(b.التاريخ || 0) - new Date(a.التاريخ || 0));
@@ -205,7 +211,7 @@ export default function ReportsScreen() {
                 <p style="color: #EF4444;">${safeExpenses.toLocaleString()} ر.ي</p>
               </div>
               <div class="summary-item">
-                <h3>صافي الدخل الشهر</h3>
+                <h3>صافي الدخل الشهري</h3>
                 <p style="color: #0F172A;">${safeNetIncome.toLocaleString()} ر.ي</p>
               </div>
             </div>
@@ -225,7 +231,7 @@ export default function ReportsScreen() {
             </table>
 
             <div class="footer">
-              <p>تم استخراج هذا التقرير آلياً عبر نظام إدارة المحاسبة والبقالة</p>
+              <p>تم استخراج هذا التقرير آلياً عبر نظام الميزان المحاسبي</p>
             </div>
           </div>
           <script>
