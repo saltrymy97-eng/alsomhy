@@ -135,26 +135,17 @@ export default function App() {
 
   const fetchDashboardStats = async () => {
     try {
-      // 1. حساب رصيد الصندوق النقدي المباشر
-      const cashRes = await db.getAll(`
-        SELECT 
-          SUM(CASE WHEN LOWER(transaction_type) IN ('income', 'قبض', 'إيداع') THEN amount ELSE -amount END) as balance 
-        FROM treasury 
-        WHERE account_type = 'الصندوق' OR LOWER(account_type) IN ('cash', 'صندوق', 'خزينة', 'نقدي');
+      // قراءة الأرصدة المباشرة من جدول treasury_balances الخاص بوحدة النقدية
+      const balanceRes = await db.getAll(`
+        SELECT cash_balance, bank_balance
+        FROM treasury_balances
+        LIMIT 1;
       `);
 
-      // 2. حساب رصيد الحساب البنكي المباشر
-      const bankRes = await db.getAll(`
-        SELECT 
-          SUM(CASE WHEN LOWER(transaction_type) IN ('income', 'قبض', 'إيداع') THEN amount ELSE -amount END) as balance 
-        FROM treasury 
-        WHERE account_type = 'البنك' OR LOWER(account_type) IN ('bank', 'بنك', 'حساب بنكي');
-      `);
+      const cashVal = Number(balanceRes?.[0]?.cash_balance || 0);
+      const bankVal = Number(balanceRes?.[0]?.bank_balance || 0);
 
-      const cashVal = Number(cashRes?.[0]?.balance || 0);
-      const bankVal = Number(bankRes?.[0]?.balance || 0);
-
-      // 3. حساب صافي الحركة اليومية
+      // حساب صافي الحركة اليومية
       const today = new Date().toISOString().split('T')[0];
       const logsRes = await db.getAll(`SELECT SUM(net_profit) as totalNet FROM daily_transactions WHERE date = ?;`, [today]);
       const calculatedDailyNet = Number(logsRes?.[0]?.totalNet || 0);
@@ -165,7 +156,7 @@ export default function App() {
         bankBalance: bankVal,
       });
 
-      // 4. جلب التنبيهات والديون والمنتجات المنتهية
+      // جلب التنبيهات والديون والمنتجات المنتهية
       const newAlerts = [];
       
       const debtsRes = await db.getAll(`SELECT COUNT(*) as count FROM contacts_ledger WHERE amount_due > 0 AND due_date <= ?;`, [today]);
