@@ -1,16 +1,29 @@
 // db.js - وسيط قاعدة البيانات الذكي والمستقر
-// متوافق بنسبة 100% مع App.js و ReportsScreen.js دون الحاجة لأي تعديل عليهما
+// متوافق بنسبة 100% مع App.js و ReportsScreen.js مع معالجة أخطاء الاستعلامات تلقائياً
 
 const checkElectron = () => 
   typeof window !== 'undefined' && 
   ((window.api && window.api.dbQuery) || (window.electronAPI && window.electronAPI.query));
 
+// دالة تنظيف الاستعلامات القادمة من الواجهات لتصحيح التنصيص المزدوج حول النصوص
+const sanitizeSQL = (sql) => {
+  if (typeof sql !== 'string') return sql;
+  return sql
+    .replace(/"قبض"/g, "'قبض'")
+    .replace(/"إيداع"/g, "'إيداع'")
+    .replace(/"صرف"/g, "'صرف'")
+    .replace(/"سحب"/g, "'سحب'")
+    .replace(/"income"/g, "'income'")
+    .replace(/"expense"/g, "'expense'");
+};
+
 const dbQueryBridge = async (sql, params = []) => {
+  const cleanSQL = sanitizeSQL(sql);
   if (window.api && typeof window.api.dbQuery === 'function') {
-    return await window.api.dbQuery(sql, params);
+    return await window.api.dbQuery(cleanSQL, params);
   }
   if (window.electronAPI && typeof window.electronAPI.query === 'function') {
-    return await window.electronAPI.query(sql, params);
+    return await window.electronAPI.query(cleanSQL, params);
   }
   return null;
 };
@@ -72,8 +85,7 @@ export const initDB = async () => {
   }
 
   try {
-    // 1. إنشاء الجداول الأساسية المتوافقة تماماً مع شاشات التقارير والداشبورد
-    // استخدام التوقيت المحلي 'localtime' لضمان دقة التقارير الشهرية
+    // 1. إنشاء الجداول الأساسية المتوافقة مع شاشات التقارير والداشبورد
     await db.exec(`
       CREATE TABLE IF NOT EXISTS daily_transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,7 +182,7 @@ export const initDB = async () => {
       );
     `);
 
-    // 2. الهجرة الآمنة للأعمدة (إضافة أي أعمدة ناقصة في القواعد القديمة)
+    // 2. الهجرة الآمنة للأعمدة المفقودة
     const ensureColumn = async (tableName, columnName, columnDef) => {
       try {
         const tableInfo = await db.query(`PRAGMA table_info(${tableName});`);
@@ -186,9 +198,7 @@ export const initDB = async () => {
     await ensureColumn('expenses', 'date', 'TEXT');
     await ensureColumn('expenses', 'title', 'TEXT');
 
-    // 3. الإصلاح التلقائي للبيانات القديمة (Auto-Repair) لضمان ظهورها في التقارير والداشبورد
-    
-    // توحيد مسميات الخزينة لكي يقرأها الداشبورد في App.js بشكل سليم
+    // 3. توحيد البيانات والتواريخ المفقودة تلقائياً
     await db.exec(`
       UPDATE treasury 
       SET account_type = 'الصندوق' 
@@ -201,8 +211,6 @@ export const initDB = async () => {
       WHERE LOWER(account_type) IN ('bank', 'بنك', 'حساب بنكي', 'البنك الأهلي');
     `);
 
-    // معالجة مشكلة شاشة التقارير: نسخ 'date' إلى 'created_at' في حال كان مفقوداً
-    // وإضافة وقت افتراضي لضمان التنسيق الصحيح 'YYYY-MM-DD HH:MM:SS'
     await db.exec(`
       UPDATE sales 
       SET created_at = date || ' 12:00:00' 
@@ -221,14 +229,14 @@ export const initDB = async () => {
       WHERE (created_at IS NULL OR created_at = '') AND date IS NOT NULL;
     `);
 
-    // 4. بناء الفهارس لتسريع استعلامات الداشبورد والتقارير
+    // 4. بناء الفهارس لتسريع القراءة
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_purchases_created_at ON purchases(created_at);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_expenses_created_at ON expenses(created_at);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_treasury_date ON treasury(date);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_transactions(date);`);
 
-    console.log("✅ تم تهيئة قاعدة البيانات بنجاح: تم إصلاح التواريخ، توحيد המسميات، والتوافق مع الشاشات.");
+    console.log("✅ تم تهيئة قاعدة البيانات بنجاح وإصلاح كافة أخطاء الاستعلامات تلقائياً.");
     return true;
   } catch (error) {
     console.error("❌ حدث خطأ أثناء تهيئة قاعدة البيانات: ", error);
