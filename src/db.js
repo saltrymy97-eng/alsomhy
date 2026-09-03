@@ -1,4 +1,4 @@
-// db.js - تحديث معالجة المخرجات وإصلاح خطأ duplicate column name
+// db.js - تحديث معالجة المخرجات وإصلاح خطأ duplicate column name وإضافة جدول الأرصدة المفقود
 
 const checkElectron = () => 
   typeof window !== 'undefined' && 
@@ -159,6 +159,24 @@ export const initDB = async () => {
         created_at DATETIME DEFAULT (datetime('now', 'localtime'))
       );
     `);
+
+    // إنشاء جدول أرصدة الخزينة والبنك المفقود لتجنب خطأ no such table: treasury_balances
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS treasury_balances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cash_balance REAL DEFAULT 0,
+        bank_balance REAL DEFAULT 0
+      );
+    `);
+
+    // إدخال سجل افتتاحي للأرصدة إذا كان الجدول فارغاً
+    const balanceCheck = await db.getAll('SELECT * FROM treasury_balances LIMIT 1;');
+    if (!balanceCheck || balanceCheck.length === 0) {
+      await db.run(`
+        INSERT INTO treasury_balances (cash_balance, bank_balance) 
+        VALUES (0, 0);
+      `);
+    }
 
     await db.exec(`
       CREATE TABLE IF NOT EXISTS inventory (
