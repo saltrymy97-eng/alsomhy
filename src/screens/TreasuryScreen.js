@@ -1,529 +1,425 @@
 import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  TextInput, 
+  TouchableOpacity, 
+  ScrollView, 
   Alert,
-  SafeAreaView,
-  StatusBar,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native';
 import db from '../db';
 
 export default function TreasuryScreen() {
-  const [cashBalance, setCashBalance] = useState(0);
-  const [bankBalance, setBankBalance] = useState(0);
-  const [transactionType, setTransactionType] = useState('deposit'); 
+  // حالة الأرصدة
+  const [balances, setBalances] = useState({ cash: 0, bank: 0 });
+  const [balanceId, setBalanceId] = useState(null);
+
+  // حالة نموذج الإدخال
+  const [selectedAccount, setSelectedAccount] = useState('cash'); // 'cash' | 'bank'
+  const [transactionType, setTransactionType] = useState('deposit'); // 'deposit' | 'withdraw' | 'transfer'
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  
+  // تواريخ
+  const today = new Date().toISOString().split('T')[0];
+  const currentMonth = today.substring(0, 7);
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+
+  // حالة سجل الحركات
   const [transactions, setTransactions] = useState([]);
 
   useEffect(() => {
-    const setup = async () => {
-      await initDB();
-      await fetchData();
-    };
-    setup();
-  }, [selectedMonth, selectedDate]);
+    loadBalances();
+    loadTransactions();
+  }, [selectedMonth]);
 
-  const changeMonth = (delta) => {
-    const [year, month] = selectedMonth.split('-').map(Number);
-    const date = new Date(year, month - 1 + delta, 1);
-    const newMonthStr = date.toISOString().slice(0, 7);
-    setSelectedMonth(newMonthStr);
-    setSelectedDate(`${newMonthStr}-01`);
-  };
-
-  const initDB = async () => {
+  // ==========================================
+  // دوال قاعدة البيانات
+  // ==========================================
+  const loadBalances = async () => {
     try {
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS treasury_balances (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          cash_balance REAL DEFAULT 0,
-          bank_balance REAL DEFAULT 0
-        );
-      `);
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS treasury_transactions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          type TEXT NOT NULL,
-          amount REAL NOT NULL,
-          description TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-
-      const result = await db.query('SELECT * FROM treasury_balances;');
-      if (!result || result.length === 0) {
-        await db.query('INSERT INTO treasury_balances (cash_balance, bank_balance) VALUES (0, 0);');
+      const res = await db.getAll('SELECT * FROM treasury_balances LIMIT 1;');
+      if (res && res.length > 0) {
+        setBalances({
+          cash: res[0].cash_balance || 0,
+          bank: res[0].bank_balance || 0,
+        });
+        setBalanceId(res[0].id);
+      } else {
+        // إنشاء السجل الافتراضي في حال عدم وجوده
+        await db.run('INSERT INTO treasury_balances (cash_balance, bank_balance) VALUES (0, 0);');
+        const newRes = await db.getAll('SELECT * FROM treasury_balances LIMIT 1;');
+        if (newRes && newRes.length > 0) {
+          setBalances({ cash: 0, bank: 0 });
+          setBalanceId(newRes[0].id);
+        }
       }
     } catch (error) {
-      console.error('خطأ في تهيئة قاعدة البيانات:', error);
+      console.error('خطأ في جلب الأرصدة:', error);
     }
   };
 
-  const fetchData = async () => {
+  const loadTransactions = async () => {
     try {
-      const balanceRes = await db.query('SELECT * FROM treasury_balances LIMIT 1;');
-      if (balanceRes && balanceRes.length > 0) {
-        setCashBalance(balanceRes[0].cash_balance || 0);
-        setBankBalance(balanceRes[0].bank_balance || 0);
-      }
-
-      const txRes = await db.query(
-        `SELECT * FROM treasury_transactions 
-         WHERE strftime('%Y-%m', created_at) = ? 
-         ORDER BY id DESC;`,
-        [selectedMonth]
-      );
-      setTransactions(txRes || []);
+      const query = `
+        SELECT * FROM treasury_transactions 
+        WHERE strftime('%Y-%m', created_at) = ? 
+        ORDER BY created_at DESC, id DESC;
+      `;
+      const res = await db.getAll(query, [selectedMonth]);
+      setTransactions(res || []);
     } catch (error) {
-      console.error('خطأ في جلب البيانات:', error);
+      console.error('خطأ في جلب الحركات:', error);
     }
   };
 
-  const handleSaveTransaction = async () => {
+  const handleSave = async () => {
     const numAmount = parseFloat(amount);
 
+    // 1. التحقق من صحة المدخلات الأساسية
     if (isNaN(numAmount) || numAmount <= 0) {
-      Alert.alert('تنبيه', 'يرجى إدخال مبلغ صحيح أكبر من الصفر.');
+      Alert.alert('تنبيه', 'الرجاء إدخال مبلغ صحيح أكبر من الصفر.');
       return;
     }
-
     if (!description.trim()) {
-      Alert.alert('تنبيه', 'يرجى إدخال وصف أو بيان للحركة.');
+      Alert.alert('تنبيه', 'الرجاء إدخال سبب العملية (البيان).');
+      return;
+    }
+    if (!selectedDate.trim()) {
+      Alert.alert('تنبيه', 'تاريخ العملية مطلوب.');
       return;
     }
 
-    let newCash = cashBalance;
-    let newBank = bankBalance;
+    let currentCash = balances.cash;
+    let currentBank = balances.bank;
+    let finalType = '';
 
-    if (transactionType === 'deposit') {
-      newCash += numAmount;
-    } else if (transactionType === 'withdraw') {
-      if (numAmount > cashBalance) {
-        Alert.alert('خطأ', 'رصيد الصندوق الحالي لا يكفي لإتمام عملية السحب.');
-        return;
+    // 2. معالجة المنطق بناءً على الحساب ونوع العملية
+    if (selectedAccount === 'cash') {
+      if (transactionType === 'deposit') {
+        currentCash += numAmount;
+        finalType = 'cash_deposit';
+      } else if (transactionType === 'withdraw') {
+        if (numAmount > currentCash) {
+          Alert.alert('خطأ', 'رصيد الصندوق غير كافٍ لهذه العملية.');
+          return;
+        }
+        currentCash -= numAmount;
+        finalType = 'cash_withdraw';
+      } else if (transactionType === 'transfer') {
+        if (numAmount > currentCash) {
+          Alert.alert('خطأ', 'رصيد الصندوق غير كافٍ للتحويل.');
+          return;
+        }
+        currentCash -= numAmount;
+        currentBank += numAmount;
+        finalType = 'cash_to_bank';
       }
-      newCash -= numAmount;
-    } else if (transactionType === 'transfer') {
-      if (numAmount > cashBalance) {
-        Alert.alert('خطأ', 'رصيد الصندوق لا يكفي لإجراء التحويل للبنك.');
-        return;
+    } else if (selectedAccount === 'bank') {
+      if (transactionType === 'deposit') {
+        currentBank += numAmount;
+        finalType = 'bank_deposit';
+      } else if (transactionType === 'withdraw') {
+        if (numAmount > currentBank) {
+          Alert.alert('خطأ', 'رصيد البنك غير كافٍ لهذه العملية.');
+          return;
+        }
+        currentBank -= numAmount;
+        finalType = 'bank_withdraw';
+      } else if (transactionType === 'transfer') {
+        if (numAmount > currentBank) {
+          Alert.alert('خطأ', 'رصيد البنك غير كافٍ للتحويل.');
+          return;
+        }
+        currentBank -= numAmount;
+        currentCash += numAmount;
+        finalType = 'bank_to_cash';
       }
-      newCash -= numAmount;
-      newBank += numAmount;
     }
 
+    // 3. الحفظ في قاعدة البيانات
     try {
-      await db.query(
-        'UPDATE treasury_balances SET cash_balance = ?, bank_balance = ? WHERE id = 1;',
-        [newCash, newBank]
-      );
-
-      const timestamp = `${selectedDate} ${new Date().toTimeString().slice(0, 8)}`;
-
-      await db.query(
+      // إدراج الحركة
+      await db.run(
         'INSERT INTO treasury_transactions (type, amount, description, created_at) VALUES (?, ?, ?, ?);',
-        [transactionType, numAmount, description.trim(), timestamp]
+        [finalType, numAmount, description.trim(), selectedDate]
       );
 
+      // تحديث الأرصدة
+      if (balanceId) {
+        await db.run(
+          'UPDATE treasury_balances SET cash_balance = ?, bank_balance = ? WHERE id = ?;',
+          [currentCash, currentBank, balanceId]
+        );
+      } else {
+        await db.run(
+          'UPDATE treasury_balances SET cash_balance = ?, bank_balance = ?;',
+          [currentCash, currentBank]
+        );
+      }
+
+      Alert.alert('نجاح', 'تم حفظ العملية وتحديث الأرصدة بنجاح.');
+      
+      // تصفير الحقول وإعادة التحميل
       setAmount('');
       setDescription('');
-      await fetchData();
-
-      Alert.alert('نجاح', 'تم تسجيل الحركة النقدية بنجاح.');
+      loadBalances();
+      loadTransactions();
+      
     } catch (error) {
-      console.error('خطأ في حفظ الحركة:', error);
-      Alert.alert('خطأ', 'تعذر حفظ العملية في قاعدة البيانات.');
+      console.error('خطأ في حفظ العملية:', error);
+      Alert.alert('خطأ', 'حدث خطأ أثناء حفظ العملية.');
     }
   };
 
-  const getTransactionBadge = (type) => {
+  // ==========================================
+  // دوال مساعدة للواجهة
+  // ==========================================
+  const changeMonth = (offset) => {
+    let [year, month] = selectedMonth.split('-').map(Number);
+    month += offset;
+    if (month === 0) { month = 12; year -= 1; }
+    else if (month === 13) { month = 1; year += 1; }
+    setSelectedMonth(`${year}-${month.toString().padStart(2, '0')}`);
+  };
+
+  const getPlaceholderText = () => {
+    if (transactionType === 'deposit') return 'سبب الإيداع (مثال: مبيعات، رأس مال...)';
+    if (transactionType === 'withdraw') return 'سبب السحب (مثال: مصروف، سحب شخصي...)';
+    return 'بيان التحويل';
+  };
+
+  const formatTransactionType = (type) => {
     switch (type) {
-      case 'deposit':
-        return { label: 'إيداع صندوق', color: '#10B981' };
-      case 'withdraw':
-        return { label: 'سحب صندوق', color: '#EF4444' };
-      case 'transfer':
-        return { label: 'تحويل للبنك', color: '#2563EB' };
-      default:
-        return { label: 'حركة نقدية', color: '#64748B' };
+      case 'cash_deposit': return { label: 'إيداع نقدية', color: '#10B981' };
+      case 'cash_withdraw': return { label: 'سحب نقدية', color: '#EF4444' };
+      case 'cash_to_bank': return { label: 'تحويل نقدية ➔ بنك', color: '#3B82F6' };
+      case 'bank_deposit': return { label: 'إيداع بنك', color: '#10B981' };
+      case 'bank_withdraw': return { label: 'سحب بنك', color: '#EF4444' };
+      case 'bank_to_cash': return { label: 'تحويل بنك ➔ نقدية', color: '#F59E0B' };
+      default: return { label: 'عملية غير معروفة', color: '#64748B' };
     }
-  };
-
-  const renderTransactionItem = ({ item }) => {
-    const badge = getTransactionBadge(item.type);
-
-    return (
-      <View style={styles.historyCard}>
-        <View style={styles.historyRight}>
-          <View style={styles.historyDetails}>
-            <Text style={styles.historyDescription}>{item.description}</Text>
-            <Text style={styles.historyDate}>{item.created_at}</Text>
-          </View>
-        </View>
-        <View style={styles.historyLeft}>
-          <Text style={[styles.historyAmount, { color: badge.color }]}>
-            {(item.amount || 0).toLocaleString()} ر.ي
-          </Text>
-          <Text style={styles.historyTypeLabel}>{badge.label}</Text>
-        </View>
-      </View>
-    );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
-      <View style={{ flex: 1 }}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
-        {/* شريط اختيار وتنقل الشهر المفلتر */}
-        <View style={styles.monthSelectorBar}>
-          <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
-            <Text style={styles.monthNavText}>▶</Text>
-          </TouchableOpacity>
-
-          <View style={styles.monthDisplayContainer}>
-            <Text style={styles.monthLabelText}>تصفية الشهر:</Text>
-            <Text style={styles.monthValueText}>{selectedMonth}</Text>
-          </View>
-
-          <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(1)}>
-            <Text style={styles.monthNavText}>◀</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* 1. الأرصدة العلوية */}
+        {/* ================= الأرصدة ================= */}
         <View style={styles.balancesContainer}>
-          <View style={[styles.balanceCard, styles.cashCard]}>
-            <Text style={styles.balanceTitle}>رصيد الصندوق الحالي</Text>
-            <Text style={styles.balanceValue}>{(cashBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
+          <View style={[styles.balanceCard, { borderRightColor: '#10B981' }]}>
+            <Text style={styles.balanceTitle}>رصيد الصندوق</Text>
+            <Text style={[styles.balanceAmount, { color: '#10B981' }]}>{balances.cash.toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
           </View>
-
-          <View style={[styles.balanceCard, styles.bankCard]}>
-            <Text style={styles.balanceTitle}>رصيد البنك الحالي</Text>
-            <Text style={styles.balanceValue}>{(bankBalance || 0).toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
+          <View style={[styles.balanceCard, { borderRightColor: '#3B82F6' }]}>
+            <Text style={styles.balanceTitle}>رصيد البنك</Text>
+            <Text style={[styles.balanceAmount, { color: '#3B82F6' }]}>{balances.bank.toLocaleString()} <Text style={styles.currency}>ر.ي</Text></Text>
           </View>
         </View>
 
-        {/* 2. نموذج تسجيل حركة نقدية */}
-        <View style={styles.formCard}>
-          <Text style={styles.sectionTitle}>تسجيل حركة بتاريخ المفلتر</Text>
+        {/* ================= نموذج الإدخال ================= */}
+        <View style={styles.formContainer}>
+          <Text style={styles.sectionTitle}>تسجيل حركة مالية</Text>
 
-          <View style={styles.dateInputWrapper}>
-            <Text style={styles.fieldLabel}>تاريخ العملية:</Text>
+          {/* التاريخ */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>تاريخ العملية</Text>
             <TextInput
-              style={styles.dateInput}
+              style={styles.textInput}
               value={selectedDate}
               onChangeText={setSelectedDate}
               placeholder="YYYY-MM-DD"
             />
           </View>
 
-          {/* أزرار التبديل */}
-          <View style={styles.toggleContainer}>
-            <TouchableOpacity
-              style={[styles.toggleButton, transactionType === 'deposit' && styles.activeDeposit]}
-              onPress={() => setTransactionType('deposit')}
-            >
-              <Text style={[styles.toggleText, transactionType === 'deposit' && styles.activeToggleText]}>إيداع</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.toggleButton, transactionType === 'withdraw' && styles.activeWithdraw]}
-              onPress={() => setTransactionType('withdraw')}
-            >
-              <Text style={[styles.toggleText, transactionType === 'withdraw' && styles.activeToggleText]}>سحب</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.toggleButton, transactionType === 'transfer' && styles.activeTransfer]}
-              onPress={() => setTransactionType('transfer')}
-            >
-              <Text style={[styles.toggleText, transactionType === 'transfer' && styles.activeToggleText]}>تحويل للبنك</Text>
-            </TouchableOpacity>
+          {/* اختيار الحساب */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>الحساب</Text>
+            <View style={styles.segmentedControl}>
+              <TouchableOpacity 
+                style={[styles.segmentBtn, selectedAccount === 'cash' && styles.segmentBtnActive]}
+                onPress={() => setSelectedAccount('cash')}
+              >
+                <Text style={[styles.segmentText, selectedAccount === 'cash' && styles.segmentTextActive]}>النقدية</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.segmentBtn, selectedAccount === 'bank' && styles.segmentBtnActive]}
+                onPress={() => setSelectedAccount('bank')}
+              >
+                <Text style={[styles.segmentText, selectedAccount === 'bank' && styles.segmentTextActive]}>البنك</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* الإدخالات */}
+          {/* نوع العملية */}
           <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>نوع العملية</Text>
+            <View style={styles.segmentedControl}>
+              <TouchableOpacity 
+                style={[styles.segmentBtn, transactionType === 'deposit' && styles.segmentBtnActiveDeposit]}
+                onPress={() => setTransactionType('deposit')}
+              >
+                <Text style={[styles.segmentText, transactionType === 'deposit' && styles.segmentTextActiveWhite]}>إيداع</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.segmentBtn, transactionType === 'withdraw' && styles.segmentBtnActiveWithdraw]}
+                onPress={() => setTransactionType('withdraw')}
+              >
+                <Text style={[styles.segmentText, transactionType === 'withdraw' && styles.segmentTextActiveWhite]}>سحب</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.segmentBtn, transactionType === 'transfer' && styles.segmentBtnActiveTransfer]}
+                onPress={() => setTransactionType('transfer')}
+              >
+                <Text style={[styles.segmentText, transactionType === 'transfer' && styles.segmentTextActiveWhite]}>
+                  {selectedAccount === 'cash' ? 'تحويل إلى البنك' : 'تحويل إلى النقدية'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* المبلغ */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>المبلغ</Text>
             <TextInput
-              style={styles.input}
-              placeholder="المبلغ (ر.ي)"
-              placeholderTextColor="#94A3B8"
+              style={styles.textInput}
               keyboardType="numeric"
               value={amount}
               onChangeText={setAmount}
+              placeholder="0"
             />
+          </View>
+
+          {/* البيان */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>سبب العملية / البيان</Text>
             <TextInput
-              style={styles.input}
-              placeholder="البيان / الوصف (مثال: إيراد مبيعات، مصروف...)"
-              placeholderTextColor="#94A3B8"
+              style={styles.textInput}
               value={description}
               onChangeText={setDescription}
+              placeholder={getPlaceholderText()}
             />
           </View>
 
           {/* زر الحفظ */}
-          <TouchableOpacity style={styles.saveButton} onPress={handleSaveTransaction} activeOpacity={0.8}>
-            <Text style={styles.saveButtonText}>حفظ وتوثيق العملية</Text>
+          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+            <Text style={styles.saveButtonText}>حفظ العملية</Text>
           </TouchableOpacity>
         </View>
 
-        {/* 3. سجل الحركات النقدية */}
+        {/* ================= سجل الحركات ================= */}
         <View style={styles.historyContainer}>
-          <Text style={styles.sectionTitle}>سجل حركات شهر {selectedMonth}</Text>
-          <FlatList
-            data={transactions}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={renderTransactionItem}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 20 }}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>لا توجد حركات نقدية مسجلة في هذا الشهر</Text>
-              </View>
-            }
-          />
+          <View style={styles.historyHeader}>
+            <Text style={styles.sectionTitle}>سجل الحركات</Text>
+            <View style={styles.monthSelector}>
+              <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.monthBtn}>
+                <Text style={styles.monthBtnText}>{'<'}</Text>
+              </TouchableOpacity>
+              <Text style={styles.monthText}>{selectedMonth}</Text>
+              <TouchableOpacity onPress={() => changeMonth(1)} style={styles.monthBtn}>
+                <Text style={styles.monthBtnText}>{'>'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {transactions.length === 0 ? (
+            <Text style={styles.noDataText}>لا توجد حركات مسجلة في هذا الشهر.</Text>
+          ) : (
+            transactions.map((item) => {
+              const typeInfo = formatTransactionType(item.type);
+              return (
+                <View key={item.id.toString()} style={styles.transactionCard}>
+                  <View style={styles.transactionRow}>
+                    <View style={styles.transactionRight}>
+                      <Text style={[styles.transactionType, { color: typeInfo.color }]}>{typeInfo.label}</Text>
+                      <Text style={styles.transactionDesc}>{item.description}</Text>
+                    </View>
+                    <View style={styles.transactionLeft}>
+                      <Text style={styles.transactionAmount}>
+                        {item.amount.toLocaleString()} <Text style={styles.currencySmall}>ر.ي</Text>
+                      </Text>
+                      <Text style={styles.transactionDate}>{item.created_at}</Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })
+          )}
         </View>
 
-      </View>
-    </SafeAreaView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  monthSelectorBar: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  monthNavBtn: {
-    backgroundColor: '#F1F5F9',
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center', 
-    alignContent: 'center',
-  },
-  monthNavText: { fontSize: 14, color: '#334155', fontWeight: 'bold' },
-  monthDisplayContainer: { alignItems: 'center' },
-  monthLabelText: { fontSize: 11, color: '#64748B', fontWeight: '600' },
-  monthValueText: { fontSize: 15, color: '#0F172A', fontWeight: 'bold' },
-
-  balancesContainer: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    paddingHorizontal: 15,
-    marginTop: 10,
-    gap: 10,
-  },
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  scrollContent: { padding: 16, paddingBottom: 40 },
+  
+  // الأرصدة
+  balancesContainer: { flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: 20, gap: 12 },
   balanceCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
+    flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16,
+    borderWidth: 1, borderColor: '#E2E8F0', borderRightWidth: 4,
+    shadowColor: '#64748B', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
+    alignItems: 'flex-end'
   },
-  cashCard: {
-    borderRightWidth: 4,
-    borderRightColor: '#10B981',
+  balanceTitle: { fontSize: 13, color: '#64748B', fontWeight: '700', marginBottom: 6 },
+  balanceAmount: { fontSize: 18, fontWeight: 'bold' },
+  currency: { fontSize: 11, fontWeight: 'normal' },
+
+  // النموذج
+  formContainer: {
+    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18, marginBottom: 20,
+    borderWidth: 1, borderColor: '#E2E8F0',
+    shadowColor: '#64748B', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3,
   },
-  bankCard: {
-    borderRightWidth: 4,
-    borderRightColor: '#2563EB',
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#1E293B', marginBottom: 16, textAlign: 'right' },
+  inputGroup: { marginBottom: 14 },
+  inputLabel: { fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, textAlign: 'right' },
+  textInput: {
+    backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 10,
+    paddingHorizontal: 14, height: 48, fontSize: 14, color: '#0F172A', textAlign: 'right'
   },
-  balanceTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-    marginBottom: 4,
-    textAlign: 'right',
+  
+  // الأزرار المجمعة (Segmented Control)
+  segmentedControl: { flexDirection: 'row-reverse', backgroundColor: '#F1F5F9', borderRadius: 10, padding: 4, gap: 4 },
+  segmentBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
+  segmentBtnActive: { backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
+  segmentBtnActiveDeposit: { backgroundColor: '#10B981', elevation: 2 },
+  segmentBtnActiveWithdraw: { backgroundColor: '#EF4444', elevation: 2 },
+  segmentBtnActiveTransfer: { backgroundColor: '#3B82F6', elevation: 2 },
+  segmentText: { fontSize: 13, fontWeight: 'bold', color: '#64748B' },
+  segmentTextActive: { color: '#0F172A' },
+  segmentTextActiveWhite: { color: '#FFFFFF' },
+
+  saveButton: { backgroundColor: '#1E293B', borderRadius: 10, height: 50, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
+  saveButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: 'bold' },
+
+  // السجل
+  historyContainer: { flex: 1 },
+  historyHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  monthSelector: { flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 20, borderWidth: 1, borderColor: '#E2E8F0' },
+  monthBtn: { paddingHorizontal: 12, paddingVertical: 6 },
+  monthBtnText: { fontSize: 16, color: '#64748B', fontWeight: 'bold' },
+  monthText: { fontSize: 14, fontWeight: 'bold', color: '#0F172A', paddingHorizontal: 8 },
+  
+  noDataText: { textAlign: 'center', color: '#94A3B8', marginTop: 20, fontSize: 14 },
+  
+  transactionCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginBottom: 10,
+    borderWidth: 1, borderColor: '#F1F5F9',
   },
-  balanceValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#0F172A',
-    textAlign: 'right',
-  },
-  currency: {
-    fontSize: 11,
-    fontWeight: 'normal',
-    color: '#64748B',
-  },
-  formCard: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 15,
-    marginTop: 10,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    textAlign: 'right',
-    marginBottom: 8,
-  },
-  dateInputWrapper: {
-    marginBottom: 8,
-  },
-  fieldLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    marginBottom: 3,
-    textAlign: 'right',
-  },
-  dateInput: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 8,
-    padding: 6,
-    fontSize: 13,
-    color: '#0F172A',
-    textAlign: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    fontWeight: 'bold',
-  },
-  toggleContainer: {
-    flexDirection: 'row-reverse',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    padding: 3,
-    marginBottom: 10,
-  },
-  toggleButton: {
-    flex: 1,
-    paddingVertical: 7,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  activeDeposit: {
-    backgroundColor: '#10B981',
-  },
-  activeWithdraw: {
-    backgroundColor: '#EF4444',
-  },
-  activeTransfer: {
-    backgroundColor: '#2563EB',
-  },
-  toggleText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  activeToggleText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-  },
-  inputGroup: {
-    gap: 8,
-    marginBottom: 10,
-  },
-  input: {
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    color: '#0F172A',
-    textAlign: 'right',
-  },
-  saveButton: {
-    backgroundColor: '#0F172A',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  historyContainer: {
-    flex: 1,
-    paddingHorizontal: 15,
-    marginTop: 10,
-  },
-  historyCard: {
-    backgroundColor: '#FFFFFF',
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  historyRight: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    flex: 1,
-  },
-  historyDetails: {
-    alignItems: 'flex-start',
-    flex: 1,
-  },
-  historyDescription: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1E293B',
-    textAlign: 'right',
-  },
-  historyDate: {
-    fontSize: 10,
-    color: '#94A3B8',
-    marginTop: 2,
-  },
-  historyLeft: {
-    alignItems: 'flex-end',
-  },
-  historyAmount: {
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  historyTypeLabel: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-  },
-  emptyText: {
-    fontSize: 12,
-    color: '#94A3B8',
-  },
+  transactionRow: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center' },
+  transactionRight: { flex: 1, alignItems: 'flex-end', paddingLeft: 10 },
+  transactionLeft: { alignItems: 'flex-start' },
+  transactionType: { fontSize: 13, fontWeight: '800', marginBottom: 4 },
+  transactionDesc: { fontSize: 13, color: '#475569', textAlign: 'right' },
+  transactionAmount: { fontSize: 15, fontWeight: 'bold', color: '#0F172A', marginBottom: 4 },
+  transactionDate: { fontSize: 11, color: '#94A3B8' },
+  currencySmall: { fontSize: 10, fontWeight: 'normal', color: '#64748B' },
 });
