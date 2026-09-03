@@ -110,30 +110,20 @@ export default function ContactsScreen() {
     }
   };
 
-  const handleMarkAsPaid = (item) => {
-    Alert.alert(
-      'تأكيد السداد',
-      `هل تم سداد مبلغ ${(item.amount_due || item.amount || 0).toLocaleString()} ر.ي الخاص بـ ${item.name} بالكامل؟`,
-      [
-        { text: 'إلغاء', style: 'cancel' },
-        { 
-          text: 'نعم، تم السداد', 
-          onPress: async () => {
-            try {
-              await db.run(
-                `UPDATE contacts_ledger SET status = 'paid' WHERE id = ?;`,
-                [item.id]
-              );
-              await fetchContacts(); 
-              Alert.alert('تم', 'تم تسجيل السداد وإخفاء السجل بنجاح.');
-            } catch (error) {
-              console.error('خطأ في تسجيل السداد:', error);
-              Alert.alert('خطأ', 'فشل تسجيل السداد.');
-            }
-          },
-        },
-      ]
-    );
+  const handleMarkAsPaid = async (item) => {
+    try {
+      await db.run(
+        `UPDATE contacts_ledger 
+         SET status = 'paid' 
+         WHERE id = ?;`,
+        [item.id]
+      );
+
+      await fetchContacts();
+    } catch (error) {
+      console.error('خطأ في تسجيل السداد:', error);
+      Alert.alert('خطأ', 'فشل تسجيل السداد.');
+    }
   };
 
   const isOverdue = (targetDateStr) => {
