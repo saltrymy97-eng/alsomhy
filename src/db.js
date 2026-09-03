@@ -178,6 +178,17 @@ export const initDB = async () => {
       `);
     }
 
+    // إضافة جدول حركات الخزينة الجديد المطلوب لـ TreasuryScreen.js
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS treasury_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        description TEXT,
+        created_at DATETIME DEFAULT (datetime('now', 'localtime'))
+      );
+    `);
+
     await db.exec(`
       CREATE TABLE IF NOT EXISTS inventory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
