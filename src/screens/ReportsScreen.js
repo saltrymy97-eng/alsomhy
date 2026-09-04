@@ -72,7 +72,6 @@ export default function ReportsScreen() {
       const monthlyPurchases = Number(purchasesRes?.[0]?.total || 0) + Number(dailyPurchasesRes?.[0]?.total || 0);
       const monthlyExpenses = Number(expensesRes?.[0]?.total || 0) + Number(treasuryExpensesRes?.[0]?.total || 0);
       
-      // صافي الدخل الشهري الصحيح = المبيعات - (المشتريات + المصروفات)
       const monthlyNetIncome = monthlySales - (monthlyPurchases + monthlyExpenses);
 
       // 5. جلب التفاصيل المفلترة للشهر المختار لعرضها في السجل
@@ -98,33 +97,23 @@ export default function ReportsScreen() {
       });
     } catch (error) {
       console.error('خطأ في جلب البيانات المالية:', error);
-      alert('تعذّر استرجاع التقارير المالية من قاعدة البيانات.');
     } finally {
       setLoading(false);
     }
   };
 
   // ==========================================
-  // وحدة النسخ الاحتياطي والاستعادة لـ Desktop Electron
+  // تنفيذ مباشر للنسخ الاحتياطي والاستعادة بدون حوارات تأكيد متصفح
   // ==========================================
   const handleCreateBackup = async () => {
     try {
       const electronApi = window.api || window.electronAPI;
-      if (!electronApi || !electronApi.backupDatabase) {
-        alert('خاصية النسخ الاحتياطي متاحة فقط في بيئة تطبيق الديسكتوب (Electron).');
-        return;
-      }
+      if (!electronApi || !electronApi.backupDatabase) return;
 
       setBackupLoading(true);
-      const res = await electronApi.backupDatabase();
-      if (res.success) {
-        alert('💾 ' + res.message);
-      } else if (res.message !== 'تم إلغاء العملية') {
-        alert('فشل العملية: ' + res.message);
-      }
+      await electronApi.backupDatabase();
     } catch (err) {
       console.error('خطأ أثناء النسخ الاحتياطي:', err);
-      alert('حدث خطأ أثناء حفظ النسخة الاحتياطية.');
     } finally {
       setBackupLoading(false);
     }
@@ -132,37 +121,24 @@ export default function ReportsScreen() {
 
   const handleRestoreBackup = async () => {
     const electronApi = window.api || window.electronAPI;
-    if (!electronApi || !electronApi.restoreDatabase) {
-      alert('خاصية استعادة النسخة متاحة فقط في بيئة تطبيق الديسكتوب (Electron).');
-      return;
-    }
-
-    const confirmRestore = window.confirm("⚠️ تحذير هام:\nاستعادة نسخة قديمة ستستبدل بيانات قاعدة البيانات الحالية بالكامل.\n\nهل تريد الاستمرار؟");
-    if (!confirmRestore) return;
+    if (!electronApi || !electronApi.restoreDatabase) return;
 
     try {
       setBackupLoading(true);
       const res = await electronApi.restoreDatabase();
-      if (res.success) {
-        alert('🎉 ' + res.message);
-        initTablesAndFetchData();
-      } else if (res.message !== 'تم إلغاء العملية') {
-        alert('فشلت الاستعادة: ' + res.message);
+      if (res && res.success) {
+        await initTablesAndFetchData();
       }
     } catch (err) {
       console.error('خطأ أثناء الاستعادة:', err);
-      alert('حدث خطأ أثناء استعادة النسخة الاحتياطية.');
     } finally {
       setBackupLoading(false);
     }
   };
 
-  // تصدير البيانات إلى Excel
+  // تصدير البيانات إلى Excel مباشرة
   const handleExportToExcel = () => {
-    if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
-      alert('لا توجد بيانات مالية مسجلة لهذا الشهر لتصديرها.');
-      return;
-    }
+    if (!Array.isArray(reportDetails) || reportDetails.length === 0) return;
 
     try {
       const worksheetData = reportDetails.map(item => ({
@@ -179,16 +155,12 @@ export default function ReportsScreen() {
       XLSX.writeFile(workbook, `Financial_Report_${selectedMonth}.xlsx`);
     } catch (error) {
       console.error('خطأ في تصدير الإكسل:', error);
-      alert('فشل تصدير ملف الإكسل.');
     }
   };
 
-  // تصدير البيانات إلى HTML للطباعة
+  // طباعة مباشرة دون حظر النوافذ المنبثقة
   const handleExportToHTML = () => {
-    if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
-      alert('لا توجد بيانات كافية لإنشاء التقرير.');
-      return;
-    }
+    if (!Array.isArray(reportDetails) || reportDetails.length === 0) return;
 
     try {
       const safeSales = Number(financialData?.monthlySales) || 0;
@@ -277,7 +249,10 @@ export default function ReportsScreen() {
             </div>
           </div>
           <script>
-            window.onload = () => { window.print(); };
+            window.onload = () => { 
+              window.print(); 
+              setTimeout(() => { window.close(); }, 500);
+            };
           </script>
         </body>
         </html>
@@ -285,14 +260,9 @@ export default function ReportsScreen() {
 
       const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
-      const printWindow = window.open(url, '_blank');
-      
-      if (!printWindow) {
-        alert('يرجى السماح بفتح النوافذ المنبثقة لعرض التقرير');
-      }
+      window.open(url, '_blank');
     } catch (error) {
       console.error('خطأ في تصدير HTML:', error);
-      alert('فشل تصدير التقرير للطباعة.');
     }
   };
 
@@ -427,7 +397,6 @@ export default function ReportsScreen() {
   );
 }
 
-// تنسيقات CSS-in-JS مخصصة للماوس والديسكتوب
 const styles = {
   container: {
     fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif',
