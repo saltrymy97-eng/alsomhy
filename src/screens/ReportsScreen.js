@@ -1,20 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  SafeAreaView,
-  StatusBar,
-  ActivityIndicator,
-} from 'react-native';
 import db from '../db';
 import * as XLSX from 'xlsx';
 
 export default function ReportsScreen() {
   const [loading, setLoading] = useState(true);
+  const [backupLoading, setBackupLoading] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
   
   const [financialData, setFinancialData] = useState({
@@ -70,7 +60,7 @@ export default function ReportsScreen() {
       const salesRes = await db.getAll('SELECT SUM(total_amount) as total FROM sales WHERE created_at LIKE ? OR date LIKE ?;', [monthPattern, monthPattern]);
       const dailySalesRes = await db.getAll('SELECT SUM(total_sales) as total FROM daily_transactions WHERE date LIKE ?;', [monthPattern]);
       
-      // 3. جلب المشتريات المباشرة ومشتريات حركة اليومية (تم إصلاحها لاحتساب المشتريات بدقة)
+      // 3. جلب المشتريات المباشرة ومشتريات حركة اليومية
       const purchasesRes = await db.getAll('SELECT SUM(total_amount) as total FROM purchases WHERE created_at LIKE ? OR date LIKE ?;', [monthPattern, monthPattern]);
       const dailyPurchasesRes = await db.getAll('SELECT SUM(total_purchases) as total FROM daily_transactions WHERE date LIKE ?;', [monthPattern]);
 
@@ -108,16 +98,69 @@ export default function ReportsScreen() {
       });
     } catch (error) {
       console.error('خطأ في جلب البيانات المالية:', error);
-      Alert.alert('خطأ', 'تعذّر استرجاع التقارير المالية من قاعدة البيانات.');
+      alert('تعذّر استرجاع التقارير المالية من قاعدة البيانات.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ==========================================
+  // وحدة النسخ الاحتياطي والاستعادة لـ Desktop Electron
+  // ==========================================
+  const handleCreateBackup = async () => {
+    try {
+      const electronApi = window.api || window.electronAPI;
+      if (!electronApi || !electronApi.backupDatabase) {
+        alert('خاصية النسخ الاحتياطي متاحة فقط في بيئة تطبيق الديسكتوب (Electron).');
+        return;
+      }
+
+      setBackupLoading(true);
+      const res = await electronApi.backupDatabase();
+      if (res.success) {
+        alert('💾 ' + res.message);
+      } else if (res.message !== 'تم إلغاء العملية') {
+        alert('فشل العملية: ' + res.message);
+      }
+    } catch (err) {
+      console.error('خطأ أثناء النسخ الاحتياطي:', err);
+      alert('حدث خطأ أثناء حفظ النسخة الاحتياطية.');
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  const handleRestoreBackup = async () => {
+    const electronApi = window.api || window.electronAPI;
+    if (!electronApi || !electronApi.restoreDatabase) {
+      alert('خاصية استعادة النسخة متاحة فقط في بيئة تطبيق الديسكتوب (Electron).');
+      return;
+    }
+
+    const confirmRestore = window.confirm("⚠️ تحذير هام:\nاستعادة نسخة قديمة ستستبدل بيانات قاعدة البيانات الحالية بالكامل.\n\nهل تريد الاستمرار؟");
+    if (!confirmRestore) return;
+
+    try {
+      setBackupLoading(true);
+      const res = await electronApi.restoreDatabase();
+      if (res.success) {
+        alert('🎉 ' + res.message);
+        initTablesAndFetchData();
+      } else if (res.message !== 'تم إلغاء العملية') {
+        alert('فشلت الاستعادة: ' + res.message);
+      }
+    } catch (err) {
+      console.error('خطأ أثناء الاستعادة:', err);
+      alert('حدث خطأ أثناء استعادة النسخة الاحتياطية.');
+    } finally {
+      setBackupLoading(false);
     }
   };
 
   // تصدير البيانات إلى Excel
   const handleExportToExcel = () => {
     if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
-      Alert.alert('تنبيه', 'لا توجد بيانات مالية مسجلة لهذا الشهر لتصديرها.');
+      alert('لا توجد بيانات مالية مسجلة لهذا الشهر لتصديرها.');
       return;
     }
 
@@ -136,14 +179,14 @@ export default function ReportsScreen() {
       XLSX.writeFile(workbook, `Financial_Report_${selectedMonth}.xlsx`);
     } catch (error) {
       console.error('خطأ في تصدير الإكسل:', error);
-      Alert.alert('خطأ', 'فشل تصدير ملف الإكسل.');
+      alert('فشل تصدير ملف الإكسل.');
     }
   };
 
   // تصدير البيانات إلى HTML للطباعة
   const handleExportToHTML = () => {
     if (!Array.isArray(reportDetails) || reportDetails.length === 0) {
-      Alert.alert('تنبيه', 'لا توجد بيانات كافية لإنشاء التقرير.');
+      alert('لا توجد بيانات كافية لإنشاء التقرير.');
       return;
     }
 
@@ -155,7 +198,6 @@ export default function ReportsScreen() {
       let tableRows = '';
       for (let i = 0; i < reportDetails.length; i++) {
         const item = reportDetails[i];
-        
         const type = item?.البند || 'غير محدد';
         const amount = Number(item?.المبلغ) || 0;
         const desc = item?.البيان || '---';
@@ -250,7 +292,7 @@ export default function ReportsScreen() {
       }
     } catch (error) {
       console.error('خطأ في تصدير HTML:', error);
-      Alert.alert('خطأ', 'فشل تصدير التقرير للطباعة.');
+      alert('فشل تصدير التقرير للطباعة.');
     }
   };
 
@@ -259,91 +301,98 @@ export default function ReportsScreen() {
   const safeNetIncome = Number(financialData?.monthlyNetIncome) || 0;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
-
-      {/* شريط فلترة الشهر */}
-      <View style={styles.monthSelectorBar}>
-        <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
-          <Text style={styles.monthNavText}>▶</Text>
-        </TouchableOpacity>
-
-        <View style={styles.monthDisplayContainer}>
-          <Text style={styles.monthLabelText}>تقرير شهر:</Text>
-          <Text style={styles.monthValueText}>{selectedMonth}</Text>
-        </View>
-
-        <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(1)}>
-          <Text style={styles.monthNavText}>◀</Text>
-        </TouchableOpacity>
-      </View>
+    <div style={styles.container}>
+      {/* شريط اختيار الشهر */}
+      <div style={styles.monthSelectorBar}>
+        <button style={styles.monthNavBtn} onClick={() => changeMonth(-1)}>▶</button>
+        <div style={styles.monthDisplayContainer}>
+          <span style={styles.monthLabelText}>تقرير شهر: </span>
+          <span style={styles.monthValueText}>{selectedMonth}</span>
+        </div>
+        <button style={styles.monthNavBtn} onClick={() => changeMonth(1)}>◀</button>
+      </div>
 
       {loading ? (
-        <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color="#0F172A" />
-          <Text style={styles.loaderText}>جاري تجميع البيانات المالية للشهر...</Text>
-        </View>
+        <div style={styles.loaderContainer}>
+          <div style={styles.loaderText}>جاري تجميع البيانات المالية للشهر...</div>
+        </div>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          
+        <div style={styles.scrollContent}>
+
+          {/* قسم حماية البيانات والنسخ الاحتياطي للديسكتوب */}
+          <div style={styles.sectionContainer}>
+            <div style={styles.sectionTitle}>حماية البيانات والنسخ الاحتياطي 🛡️</div>
+            <div style={styles.backupCard}>
+              <div style={styles.backupSubtext}>
+                احفظ نسخة احتياطية من قواعد بياناتك المحاسبية بأمان على الكمبيوتر لحمايتها من الفقدان أو لاستعادتها عند الحاجة.
+              </div>
+              <div style={styles.backupButtonsRow}>
+                <button 
+                  style={{ ...styles.backupButton, ...styles.createBackupBtn, opacity: backupLoading ? 0.6 : 1 }} 
+                  onClick={handleCreateBackup}
+                  disabled={backupLoading}
+                >
+                  💾 {backupLoading ? 'جاري المعالجة...' : 'إنشاء نسخة احتياطية'}
+                </button>
+                <button 
+                  style={{ ...styles.backupButton, ...styles.restoreBackupBtn, opacity: backupLoading ? 0.6 : 1 }} 
+                  onClick={handleRestoreBackup}
+                  disabled={backupLoading}
+                >
+                  🔄 {backupLoading ? 'جاري المعالجة...' : 'استعادة نسخة سابقـة'}
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* قسم بطاقات الملخص المالي */}
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>الملخص المالي لشهر ({selectedMonth})</Text>
-            
-            <View style={styles.summaryGrid}>
-              <View style={[styles.card, styles.salesCard]}>
-                <Text style={styles.cardTitle}>مبيعات الشهر</Text>
-                <Text style={[styles.cardValue, { color: '#10B981' }]}>
-                  {safeSales.toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
-                </Text>
-              </View>
+          <div style={styles.sectionContainer}>
+            <div style={styles.sectionTitle}>الملخص المالي لشهر ({selectedMonth})</div>
+            <div style={styles.summaryGrid}>
+              <div style={{ ...styles.card, ...styles.salesCard }}>
+                <div style={styles.cardTitle}>مبيعات الشهر</div>
+                <div style={{ ...styles.cardValue, color: '#10B981' }}>
+                  {safeSales.toLocaleString()} <span style={styles.currency}>ر.ي</span>
+                </div>
+              </div>
 
-              <View style={[styles.card, styles.expensesCard]}>
-                <Text style={styles.cardTitle}>المشتريات والمصروفات</Text>
-                <Text style={[styles.cardValue, { color: '#EF4444' }]}>
-                  {safeExpenses.toLocaleString()} <Text style={styles.currency}>ر.ي</Text>
-                </Text>
-              </View>
-            </View>
+              <div style={{ ...styles.card, ...styles.expensesCard }}>
+                <div style={styles.cardTitle}>المشتريات والمصروفات</div>
+                <div style={{ ...styles.cardValue, color: '#EF4444' }}>
+                  {safeExpenses.toLocaleString()} <span style={styles.currency}>ر.ي</span>
+                </div>
+              </div>
+            </div>
 
-            <View style={styles.netIncomeCard}>
-              <Text style={styles.netIncomeTitle}>صافي الدخل الشهري</Text>
-              <Text style={styles.netIncomeSubtitle}>إجمالي المبيعات - (المشتريات + المصروفات)</Text>
-              <Text style={[styles.netIncomeValue, { color: safeNetIncome >= 0 ? '#10B981' : '#EF4444' }]}>
-                {safeNetIncome.toLocaleString()} <Text style={styles.currencyLarge}>ريال يمني</Text>
-              </Text>
-            </View>
-          </View>
+            <div style={styles.netIncomeCard}>
+              <div style={styles.netIncomeTitle}>صافي الدخل الشهري</div>
+              <div style={styles.netIncomeSubtitle}>إجمالي المبيعات - (المشتريات + المصروفات)</div>
+              <div style={{ ...styles.netIncomeValue, color: safeNetIncome >= 0 ? '#10B981' : '#EF4444' }}>
+                {safeNetIncome.toLocaleString()} <span style={styles.currencyLarge}>ريال يمني</span>
+              </div>
+            </div>
+          </div>
 
-          {/* أزرار التصدير */}
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>تصدير التقرير</Text>
-            <View style={styles.exportButtonsRow}>
-              <TouchableOpacity 
-                style={[styles.exportButton, styles.excelButton]} 
-                onPress={handleExportToExcel}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.exportButtonText}>تصدير إلى Excel</Text>
-              </TouchableOpacity>
+          {/* أزرار التصدير والطباعة */}
+          <div style={styles.sectionContainer}>
+            <div style={styles.sectionTitle}>تصدير التقرير</div>
+            <div style={styles.exportButtonsRow}>
+              <button style={{ ...styles.exportButton, ...styles.excelButton }} onClick={handleExportToExcel}>
+                تصدير إلى Excel
+              </button>
+              <button style={{ ...styles.exportButton, ...styles.htmlButton }} onClick={handleExportToHTML}>
+                طباعة / HTML
+              </button>
+            </div>
+          </div>
 
-              <TouchableOpacity 
-                style={[styles.exportButton, styles.htmlButton]} 
-                onPress={handleExportToHTML}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.exportButtonText}>طباعة / HTML</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* قائمة التفاصيل */}
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>تفاصيل حركات الشهر ({reportDetails.length})</Text>
+          {/* سجل تفاصيل حركات الشهر */}
+          <div style={styles.sectionContainer}>
+            <div style={styles.sectionTitle}>تفاصيل حركات الشهر ({reportDetails.length})</div>
             {(!Array.isArray(reportDetails) || reportDetails.length === 0) ? (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>لا توجد حركات مالية مسجلة في هذا الشهر.</Text>
-              </View>
+              <div style={styles.emptyContainer}>
+                <div style={styles.emptyText}>لا توجد حركات مالية مسجلة في هذا الشهر.</div>
+              </div>
             ) : (
               reportDetails.map((item, index) => {
                 const type = item?.البند || 'غير محدد';
@@ -353,93 +402,174 @@ export default function ReportsScreen() {
                 const desc = item?.البيان || '---';
 
                 return (
-                  <View key={index} style={styles.historyRow}>
-                    <View style={styles.historyRowRight}>
-                      <View style={[styles.typeBadge, isSale ? styles.badgeSale : styles.badgeExpense]}>
-                        <Text style={[styles.typeBadgeText, isSale ? styles.textSale : styles.textExpense]}>{type}</Text>
-                      </View>
-                      <View>
-                        <Text style={styles.historyItemTitle}>{desc}</Text>
-                        <Text style={styles.historyItemDate}>{date}</Text>
-                      </View>
-                    </View>
-                    <Text style={[styles.historyItemAmount, { color: isSale ? '#10B981' : '#EF4444' }]}>
+                  <div key={index} style={styles.historyRow}>
+                    <div style={styles.historyRowRight}>
+                      <span style={{ ...styles.typeBadge, backgroundColor: isSale ? '#D1FAE5' : '#FEE2E2', color: isSale ? '#059669' : '#DC2626' }}>
+                        {type}
+                      </span>
+                      <div>
+                        <div style={styles.historyItemTitle}>{desc}</div>
+                        <div style={styles.historyItemDate}>{date}</div>
+                      </div>
+                    </div>
+                    <div style={{ ...styles.historyItemAmount, color: isSale ? '#10B981' : '#EF4444' }}>
                       {amount.toLocaleString()} ر.ي
-                    </Text>
-                  </View>
+                    </div>
+                  </div>
                 );
               })
             )}
-          </View>
+          </div>
 
-        </ScrollView>
+        </div>
       )}
-    </SafeAreaView>
+    </div>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
-  scrollContent: { paddingBottom: 30 },
-  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC', gap: 12 },
-  loaderText: { fontSize: 13, color: '#64748B', fontWeight: '600' },
-  
+// تنسيقات CSS-in-JS مخصصة للماوس والديسكتوب
+const styles = {
+  container: {
+    fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif',
+    backgroundColor: '#F8FAFC',
+    minHeight: '100vh',
+    direction: 'rtl',
+    color: '#0F172A',
+  },
   monthSelectorBar: {
-    flexDirection: 'row-reverse',
+    display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderColor: '#E2E8F0',
+    padding: '12px 24px',
+    borderBottom: '1px solid #E2E8F0',
   },
   monthNavBtn: {
     backgroundColor: '#F1F5F9',
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    border: 'none',
+    width: '38px',
+    height: '38px',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    color: '#334155',
+    userSelect: 'none',
+    outline: 'none',
   },
-  monthNavText: { fontSize: 14, color: '#334155', fontWeight: 'bold' },
-  monthDisplayContainer: { alignItems: 'center' },
-  monthLabelText: { fontSize: 11, color: '#64748B', fontWeight: '600' },
-  monthValueText: { fontSize: 15, color: '#0F172A', fontWeight: 'bold' },
+  monthDisplayContainer: { textAlign: 'center', userSelect: 'none' },
+  monthLabelText: { fontSize: '13px', color: '#64748B', fontWeight: '600' },
+  monthValueText: { fontSize: '16px', color: '#0F172A', fontWeight: 'bold' },
 
-  sectionContainer: { paddingHorizontal: 15, marginTop: 15 },
-  sectionTitle: { fontSize: 14, fontWeight: 'bold', color: '#1E293B', textAlign: 'right', marginBottom: 10 },
-  summaryGrid: { flexDirection: 'row-reverse', gap: 10, marginBottom: 10 },
-  card: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', elevation: 1 },
-  salesCard: { borderRightWidth: 4, borderRightColor: '#10B981' },
-  expensesCard: { borderRightWidth: 4, borderRightColor: '#EF4444' },
-  cardTitle: { fontSize: 11, fontWeight: '600', color: '#64748B' },
-  cardValue: { fontSize: 15, fontWeight: 'bold', marginTop: 4 },
-  currency: { fontSize: 10, color: '#64748B' },
-  
-  netIncomeCard: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#E2E8F0', borderRightWidth: 4, borderRightColor: '#0F172A', elevation: 1 },
-  netIncomeTitle: { fontSize: 13, fontWeight: 'bold', color: '#1E293B', textAlign: 'right' },
-  netIncomeSubtitle: { fontSize: 11, color: '#64748B', textAlign: 'right', marginTop: 2 },
-  netIncomeValue: { fontSize: 20, fontWeight: '800', textAlign: 'right', marginTop: 6 },
-  currencyLarge: { fontSize: 12, fontWeight: '500', color: '#64748B' },
+  loaderContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '300px',
+  },
+  loaderText: { fontSize: '14px', color: '#64748B', fontWeight: '600' },
 
-  exportButtonsRow: { flexDirection: 'row-reverse', gap: 10 },
-  exportButton: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 12, borderRadius: 10, elevation: 1 },
+  scrollContent: { padding: '20px', maxWidth: '1100px', margin: '0 auto' },
+  sectionContainer: { marginBottom: '24px' },
+  sectionTitle: { fontSize: '15px', fontWeight: 'bold', color: '#1E293B', marginBottom: '12px', userSelect: 'none' },
+
+  backupCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: '12px',
+    padding: '18px',
+    border: '1px solid #E2E8F0',
+    borderRight: '5px solid #2563EB',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+  },
+  backupSubtext: { fontSize: '13px', color: '#64748B', marginBottom: '14px', lineHeight: '1.6' },
+  backupButtonsRow: { display: 'flex', gap: '12px' },
+  backupButton: {
+    flex: 1,
+    padding: '12px',
+    borderRadius: '8px',
+    border: 'none',
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: '13px',
+    cursor: 'pointer',
+    userSelect: 'none',
+    outline: 'none',
+    transition: 'opacity 0.2s ease, transform 0.1s ease',
+  },
+  createBackupBtn: { backgroundColor: '#2563EB' },
+  restoreBackupBtn: { backgroundColor: '#475569' },
+
+  summaryGrid: { display: 'flex', gap: '16px', marginBottom: '16px' },
+  card: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: '12px',
+    padding: '18px',
+    border: '1px solid #E2E8F0',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+  },
+  salesCard: { borderRight: '5px solid #10B981' },
+  expensesCard: { borderRight: '5px solid #EF4444' },
+  cardTitle: { fontSize: '12px', color: '#64748B', fontWeight: '600' },
+  cardValue: { fontSize: '20px', fontWeight: 'bold', marginTop: '6px' },
+  currency: { fontSize: '12px', color: '#64748B' },
+
+  netIncomeCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: '12px',
+    padding: '20px',
+    border: '1px solid #E2E8F0',
+    borderRight: '5px solid #0F172A',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+  },
+  netIncomeTitle: { fontSize: '14px', fontWeight: 'bold', color: '#1E293B' },
+  netIncomeSubtitle: { fontSize: '12px', color: '#64748B', marginTop: '2px' },
+  netIncomeValue: { fontSize: '26px', fontWeight: '800', marginTop: '8px' },
+  currencyLarge: { fontSize: '14px', color: '#64748B', fontWeight: '500' },
+
+  exportButtonsRow: { display: 'flex', gap: '12px' },
+  exportButton: {
+    flex: 1,
+    padding: '12px',
+    borderRadius: '8px',
+    border: 'none',
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: '13px',
+    cursor: 'pointer',
+    userSelect: 'none',
+    outline: 'none',
+  },
   excelButton: { backgroundColor: '#10B981' },
   htmlButton: { backgroundColor: '#0F172A' },
-  exportButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: 'bold' },
 
-  historyRow: { backgroundColor: '#FFFFFF', flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#F1F5F9' },
-  historyRowRight: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10 },
-  typeBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  badgeSale: { backgroundColor: '#D1FAE5' },
-  badgeExpense: { backgroundColor: '#FEE2E2' },
-  typeBadgeText: { fontSize: 10, fontWeight: 'bold' },
-  textSale: { color: '#059669' },
-  textExpense: { color: '#DC2626' },
-  historyItemTitle: { fontSize: 13, fontWeight: '600', color: '#1E293B', textAlign: 'right' },
-  historyItemDate: { fontSize: 10, color: '#94A3B8', marginTop: 2, textAlign: 'right' },
-  historyItemAmount: { fontSize: 13, fontWeight: 'bold' },
-  emptyContainer: { backgroundColor: '#FFFFFF', borderRadius: 10, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9' },
-  emptyText: { fontSize: 12, color: '#94A3B8' },
-});
+  historyRow: {
+    backgroundColor: '#FFFFFF',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '14px 18px',
+    borderRadius: '10px',
+    marginBottom: '10px',
+    border: '1px solid #F1F5F9',
+  },
+  historyRowRight: { display: 'flex', alignItems: 'center', gap: '12px' },
+  typeBadge: {
+    padding: '4px 10px',
+    borderRadius: '6px',
+    fontSize: '11px',
+    fontWeight: 'bold',
+    userSelect: 'none',
+  },
+  historyItemTitle: { fontSize: '14px', fontWeight: '600', color: '#1E293B' },
+  historyItemDate: { fontSize: '11px', color: '#94A3B8', marginTop: '2px' },
+  historyItemAmount: { fontSize: '15px', fontWeight: 'bold' },
+
+  emptyContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: '10px',
+    padding: '30px',
+    textAlign: 'center',
+    border: '1px solid #F1F5F9',
+  },
+  emptyText: { fontSize: '13px', color: '#94A3B8' },
+};
