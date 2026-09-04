@@ -1,14 +1,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 // ==========================================
-// 1. جسر الاتصال بقاعدة البيانات (window.api)
+// 1. جسر الاتصال بقاعدة البيانات والنسخ الاحتياطي (window.api)
 // ==========================================
 contextBridge.exposeInMainWorld('api', {
   // إرسال استعلامات SQL إلى خلفية Electron (Main Process)
   dbQuery: (sql, params = []) => ipcRenderer.invoke('db-query', sql, params),
   
   // إرسال أمر تهيئة قاعدة البيانات عند التشغيل
-  initDB: () => ipcRenderer.invoke('db-init')
+  initDB: () => ipcRenderer.invoke('db-init'),
+
+  // وحدة النسخ الاحتياطي والاستعادة
+  backupDatabase: () => ipcRenderer.invoke('backup-database'),
+  restoreDatabase: () => ipcRenderer.invoke('restore-database')
 });
 
 // ==========================================
@@ -17,6 +21,10 @@ contextBridge.exposeInMainWorld('api', {
 contextBridge.exposeInMainWorld('electronAPI', {
   // اختصار مباشر لـ query لضمان التوافق التام
   query: (sql, params = []) => ipcRenderer.invoke('db-query', sql, params),
+
+  // إضافة دالتي النسخ والاستعادة للجسر العام أيضاً
+  backupDatabase: () => ipcRenderer.invoke('backup-database'),
+  restoreDatabase: () => ipcRenderer.invoke('restore-database'),
 
   // معلومات البيئة الأساسية
   platform: process.platform,
