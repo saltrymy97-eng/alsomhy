@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -17,13 +17,14 @@ try {
 const PORT = 34567;
 let server = null;
 let db = null;
+let dbPath = '';
 
 // ==========================================
 // 1. إدارة قاعدة البيانات المحلية (SQLite)
 // ==========================================
 function initDatabaseConnection() {
   try {
-    const dbPath = path.join(app.getPath('userData'), 'accounting.db');
+    dbPath = path.join(app.getPath('userData'), 'accounting.db');
     console.log("مسار قاعدة البيانات المحلي:", dbPath);
 
     if (Database) {
@@ -63,12 +64,72 @@ ipcMain.handle('db-init', async () => {
   return { success: true };
 });
 
+// ==========================================
+// 2. وحدة النسخ الاحتياطي والاستعادة (Backup & Restore)
+// ==========================================
+
+// إنشاء نسخة احتياطية
+ipcMain.handle('backup-database', async () => {
+  try {
+    const defaultName = `backup_accounting_${new Date().toISOString().split('T')[0]}.db`;
+    const { filePath, canceled } = await dialog.showSaveDialog({
+      title: 'حفظ نسخة احتياطية من قاعدة البيانات',
+      defaultPath: defaultName,
+      filters: [{ name: 'SQLite Database', extensions: ['db', 'sqlite'] }]
+    });
+
+    if (canceled || !filePath) return { success: false, message: 'تم إلغاء العملية' };
+
+    // تنفيذ إجراء النسخ الاحتياطي بأمان
+    if (db && typeof db.backup === 'function') {
+      await db.backup(filePath);
+    } else {
+      fs.copyFileSync(dbPath, filePath);
+    }
+
+    return { success: true, message: 'تم حفظ النسخة الاحتياطية بنجاح!' };
+  } catch (error) {
+    console.error('خطأ في إنشاء النسخة الاحتياطية:', error);
+    return { success: false, message: 'فشل حفظ النسخة الاحتياطية: ' + error.message };
+  }
+});
+
+// استعادة نسخة احتياطية
+ipcMain.handle('restore-database', async () => {
+  try {
+    const { filePaths, canceled } = await dialog.showOpenDialog({
+      title: 'اختر ملف النسخة الاحتياطية لاستعادتها',
+      filters: [{ name: 'SQLite Database', extensions: ['db', 'sqlite'] }],
+      properties: ['openFile']
+    });
+
+    if (canceled || filePaths.length === 0) return { success: false, message: 'تم إلغاء العملية' };
+
+    const selectedFilePath = filePaths[0];
+
+    // إغلاق اتصال قاعدة البيانات الحالي لتمكين استبدال الملف
+    if (db && db.close) {
+      db.close();
+    }
+
+    // استبدال ملف قاعدة البيانات الحالي بالملف المختار
+    fs.copyFileSync(selectedFilePath, dbPath);
+
+    // إعادة فتح الاتصال بعد الاستعادة
+    initDatabaseConnection();
+
+    return { success: true, message: 'تمت استعادة قاعدة البيانات بنجاح!' };
+  } catch (error) {
+    console.error('خطأ في استعادة النسخة الاحتياطية:', error);
+    initDatabaseConnection();
+    return { success: false, message: 'فشلت عملية الاستعادة: ' + error.message };
+  }
+});
 
 // ==========================================
-// 2. إعداد الخادم المحلي لتشغيل الويب
+// 3. إعداد الخادم المحلي لتشغيل الويب
 // ==========================================
 function startServer() {
-  // توجيه المسار إلى مجلد build الخاص بـ React
   const buildDir = path.join(safeDirname, 'build');
   
   server = http.createServer((req, res) => {
