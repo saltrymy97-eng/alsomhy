@@ -29,7 +29,16 @@ function initDatabaseConnection() {
 
     if (Database) {
       db = new Database(dbPath);
+      
+      // 1. تفعيل وضع WAL لسرعة القراءة والكتابة
       db.pragma('journal_mode = WAL');
+      
+      // 2. الحماية القصوى ضد انقطاع الكهرباء المفاجئ (ACID Compliant)
+      // تضمن كتابة البيانات مباشرة للقرص الصلب الفيزيائي قبل تأكيد العملية
+      db.pragma('synchronous = EXTRA'); 
+      
+      // 3. تنظيم نقطة الفحص التلقائية لمنع تضخم ملفات السجل وتسهيل التعافي الآلي
+      db.pragma('wal_autocheckpoint = 1000');
     }
   } catch (error) {
     console.error("خطأ في فتح قاعدة البيانات في Main Process:", error);
