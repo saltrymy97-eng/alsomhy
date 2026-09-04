@@ -1,4 +1,4 @@
-// db.js - تحديث معالجة المخرجات وإصلاح خطأ duplicate column name وإضافة جدول الأرصدة المفقود
+// db.js - تحديث معالجة المخرجات ودعم المعاملات المحصنة والوقاية من انقطاع الكهرباء
 
 const checkElectron = () => 
   typeof window !== 'undefined' && 
@@ -15,7 +15,7 @@ const sanitizeSQL = (sql) => {
     .replace(/"expense"/g, "'expense'");
 };
 
-// دالة تنظيف النتائج من قيم null الحسابية لتفادي أخطاء الرسوم المتحركة
+// دالة تنظيف النتائج من قيم null الحسابية لتفادي أخطاء الواجهة والرسوم المتحركة
 const sanitizeResults = (res) => {
   if (!res) return [];
   if (!Array.isArray(res)) return res;
@@ -84,18 +84,31 @@ const db = {
     }
   },
 
+  // ==========================================
+  // دعم المعاملات الملتزمة (Transactions) للوقاية من الانقطاع المفاجئ
+  // ==========================================
+  beginTransaction: async () => await db.exec('BEGIN TRANSACTION;'),
+  commit: async () => await db.exec('COMMIT;'),
+  rollback: async () => await db.exec('ROLLBACK;'),
+
   execSync: async (queryStr) => await db.exec(queryStr),
   runSync: async (queryStr, params = []) => await db.run(queryStr, params),
   getAllSync: async (queryStr, params = []) => await db.getAll(queryStr, params)
 };
 
 // ==========================================
-// تهيئة وإصلاح قاعدة البيانات تلقائياً (Smart Initialization)
+// تهيئة وإصلاح قاعدة البيانات تلقائياً وتأمين الأمان المالي
 // ==========================================
 export const initDB = async () => {
   if (!checkElectron()) return false;
 
   try {
+    // 1. تفعيل أوامر الحماية والتعافي الآلي من انقطاع الكهرباء المفاجئ
+    await db.exec(`PRAGMA journal_mode = WAL;`);
+    await db.exec(`PRAGMA synchronous = EXTRA;`);
+    await db.exec(`PRAGMA wal_autocheckpoint = 1000;`);
+
+    // 2. إنشاء الجداول الأساسية
     await db.exec(`
       CREATE TABLE IF NOT EXISTS daily_transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,7 +173,6 @@ export const initDB = async () => {
       );
     `);
 
-    // إنشاء جدول أرصدة الخزينة والبنك المفقود لتجنب خطأ no such table: treasury_balances
     await db.exec(`
       CREATE TABLE IF NOT EXISTS treasury_balances (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,7 +181,6 @@ export const initDB = async () => {
       );
     `);
 
-    // إدخال سجل افتتاحي للأرصدة إذا كان الجدول فارغاً
     const balanceCheck = await db.getAll('SELECT * FROM treasury_balances LIMIT 1;');
     if (!balanceCheck || balanceCheck.length === 0) {
       await db.run(`
@@ -178,7 +189,6 @@ export const initDB = async () => {
       `);
     }
 
-    // إضافة جدول حركات الخزينة الجديد المطلوب لـ TreasuryScreen.js
     await db.exec(`
       CREATE TABLE IF NOT EXISTS treasury_transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -221,7 +231,6 @@ export const initDB = async () => {
       );
     `);
 
-    // دالة محصنة لإضافة الأعمدة بدون أخطاء تكرار
     const ensureColumn = async (tableName, columnName, columnDef) => {
       try {
         const tableInfo = await db.getAll(`PRAGMA table_info(${tableName});`);
@@ -277,7 +286,7 @@ export const initDB = async () => {
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_treasury_date ON treasury(date);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_transactions(date);`);
 
-    console.log("✅ تم تهيئة قاعدة البيانات بنجاح وإصلاح كافة أخطاء الاستعلامات تلقائياً.");
+    console.log("✅ تم تهيئة قاعدة البيانات بنجاح، وتفعيل نمط الأمان العالي ضد انقطاع الكهرباء.");
     return true;
   } catch (error) {
     console.error("❌ حدث خطأ أثناء تهيئة قاعدة البيانات: ", error);
