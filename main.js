@@ -107,15 +107,26 @@ ipcMain.handle('restore-database', async () => {
 
     const selectedFilePath = filePaths[0];
 
-    // إغلاق اتصال قاعدة البيانات الحالي لتمكين استبدال الملف
+    // 1. إغلاق اتصال قاعدة البيانات الحالي لتمكين استبدال الملف
     if (db && db.close) {
       db.close();
+      db = null;
     }
 
-    // استبدال ملف قاعدة البيانات الحالي بالملف المختار
+    // 2. مسح ملفات السجل المؤقتة لـ WAL إن وجدت لتجنب تداخل البيانات القديمة
+    const walPath = `${dbPath}-wal`;
+    const shmPath = `${dbPath}-shm`;
+    if (fs.existsSync(walPath)) {
+      try { fs.unlinkSync(walPath); } catch (e) { console.warn("تعذّر حذف wal:", e); }
+    }
+    if (fs.existsSync(shmPath)) {
+      try { fs.unlinkSync(shmPath); } catch (e) { console.warn("تعذّر حذف shm:", e); }
+    }
+
+    // 3. استبدال ملف قاعدة البيانات الحالي بالملف المختار
     fs.copyFileSync(selectedFilePath, dbPath);
 
-    // إعادة فتح الاتصال بعد الاستعادة
+    // 4. إعادة فتح الاتصال بعد الاستعادة
     initDatabaseConnection();
 
     return { success: true, message: 'تمت استعادة قاعدة البيانات بنجاح!' };
