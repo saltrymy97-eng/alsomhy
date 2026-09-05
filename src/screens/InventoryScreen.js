@@ -14,17 +14,32 @@ import {
 } from 'react-native';
 import db from '../db';
 
+// دالة مساعدة للحصول على تاريخ اليوم بشكل آمن (بدون مشاكل Timezone التي يسببها toISOString)
+const getLocalTodayString = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// دالة مساعدة للحصول على الشهر الحالي
+const getCurrentMonthString = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+};
+
 export default function InventoryScreen() {
   const [productName, setProductName] = useState('');
   const [quantity, setQuantity] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [minAlert, setMinAlert] = useState('');
-  const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10)); 
+  const [entryDate, setEntryDate] = useState(getLocalTodayString()); 
   
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthString());
   const [inventoryList, setInventoryList] = useState([]);
-  
-  // تغيير المتغير ليعبر عن المنتجات منتهية الصلاحية
   const [expiredCount, setExpiredCount] = useState(0);
 
   useEffect(() => {
@@ -33,8 +48,29 @@ export default function InventoryScreen() {
 
   const changeMonth = (delta) => {
     const [year, month] = selectedMonth.split('-').map(Number);
-    const date = new Date(year, month - 1 + delta, 1);
-    setSelectedMonth(date.toISOString().slice(0, 7));
+    let newMonth = month + delta;
+    let newYear = year;
+
+    // التعامل الآمن مع الانتقال بين السنوات
+    if (newMonth > 12) {
+      newMonth = 1;
+      newYear++;
+    } else if (newMonth < 1) {
+      newMonth = 12;
+      newYear--;
+    }
+
+    // منع الانتقال إلى شهر يتجاوز الشهر الحالي
+    const d = new Date();
+    const currentYear = d.getFullYear();
+    const currentMonth = d.getMonth() + 1;
+    
+    if (newYear > currentYear || (newYear === currentYear && newMonth > currentMonth)) {
+      return;
+    }
+
+    const formattedMonth = String(newMonth).padStart(2, '0');
+    setSelectedMonth(`${newYear}-${formattedMonth}`);
   };
 
   const initTableAndFetch = async () => {
@@ -72,7 +108,6 @@ export default function InventoryScreen() {
       const data = results || [];
       setInventoryList(data);
 
-      // التعديل هنا: حساب عدد المنتجات التي انتهت صلاحيتها بدلاً من نقص المخزون
       const expiredItems = data.filter(item => {
         const exp = item.expiry_date || item.expiry;
         return exp ? new Date(exp) < new Date() : false;
@@ -156,6 +191,14 @@ export default function InventoryScreen() {
     );
   };
 
+  // تهيئة متغيرات العرض والتنقل
+  const [selYear, selMonth] = selectedMonth.split('-').map(Number);
+  const arabicMonths = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+  const displayMonthName = `${arabicMonths[selMonth - 1]} ${selYear}`;
+  
+  const currentD = new Date();
+  const isNextDisabled = selYear > currentD.getFullYear() || (selYear === currentD.getFullYear() && selMonth >= (currentD.getMonth() + 1));
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
@@ -164,21 +207,29 @@ export default function InventoryScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View style={styles.monthSelectorBar}>
-          <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(-1)}>
-            <Text style={styles.monthNavText}>▶</Text>
+          {/* الزر الأيمن: الشهر التالي (بسبب row-reverse يظهر على اليمين) */}
+          <TouchableOpacity 
+            style={[styles.monthNavBtn, isNextDisabled && styles.monthNavBtnDisabled]} 
+            onPress={() => changeMonth(1)}
+            disabled={isNextDisabled}
+          >
+            <Text style={[styles.monthNavText, isNextDisabled && styles.monthNavTextDisabled]}>›</Text>
           </TouchableOpacity>
 
           <View style={styles.monthDisplayContainer}>
-            <Text style={styles.monthLabelText}>جرد شهر:</Text>
-            <Text style={styles.monthValueText}>{selectedMonth}</Text>
+            <Text style={styles.monthLabelText}>المخزون:</Text>
+            <Text style={styles.monthValueText}>{displayMonthName}</Text>
           </View>
 
-          <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth(1)}>
-            <Text style={styles.monthNavText}>◀</Text>
+          {/* الزر الأيسر: الشهر السابق */}
+          <TouchableOpacity 
+            style={styles.monthNavBtn} 
+            onPress={() => changeMonth(-1)}
+          >
+            <Text style={styles.monthNavText}>‹</Text>
           </TouchableOpacity>
         </View>
 
-        {/* التعديل هنا: واجهة ملخص الصلاحيات */}
         <View style={styles.summaryBar}>
           <Text style={styles.summaryLabel}>المنتجات منتهية الصلاحية:</Text>
           <Text style={[styles.summaryValue, expiredCount > 0 ? styles.textDanger : styles.textSuccess]}>
@@ -251,7 +302,7 @@ export default function InventoryScreen() {
         </View>
 
         <View style={styles.listSection}>
-          <Text style={styles.sectionTitle}>قائمة المخزون ({selectedMonth})</Text>
+          <Text style={styles.sectionTitle}>قائمة المخزون ({displayMonthName})</Text>
           <FlatList
             data={inventoryList}
             keyExtractor={item => item.id.toString()}
@@ -274,22 +325,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderColor: '#E2E8F0',
   },
   monthNavBtn: {
     backgroundColor: '#F1F5F9',
-    width: 38,
-    height: 38,
+    width: 42,
+    height: 42,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  monthNavText: { fontSize: 14, color: '#334155', fontWeight: 'bold' },
+  monthNavBtnDisabled: {
+    backgroundColor: '#FAFAFA',
+    opacity: 0.5,
+  },
+  monthNavText: { 
+    fontSize: 22, 
+    color: '#334155', 
+    fontWeight: 'bold',
+    lineHeight: 28,
+  },
+  monthNavTextDisabled: {
+    color: '#CBD5E1',
+  },
   monthDisplayContainer: { alignItems: 'center' },
-  monthLabelText: { fontSize: 11, color: '#64748B', fontWeight: '600' },
-  monthValueText: { fontSize: 15, color: '#0F172A', fontWeight: 'bold' },
+  monthLabelText: { fontSize: 11, color: '#64748B', fontWeight: '600', marginBottom: 2 },
+  monthValueText: { fontSize: 16, color: '#0F172A', fontWeight: 'bold' },
 
   summaryBar: {
     flexDirection: 'row-reverse',
